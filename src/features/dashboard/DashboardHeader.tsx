@@ -14,7 +14,7 @@ type DashboardHeaderProps = {
 export function DashboardHeader({ greeting, points, streak }: DashboardHeaderProps) {
   return (
     <View style={styles.container}>
-      <View>
+      <View style={styles.copy}>
         <AppText color={colors.inkMuted} variant="caption">
           Today
         </AppText>
@@ -32,6 +32,9 @@ export function DashboardHeader({ greeting, points, streak }: DashboardHeaderPro
 const styles = StyleSheet.create({
   container: {
     gap: spacing.lg
+  },
+  copy: {
+    minWidth: 0
   },
   metrics: {
     flexDirection: "row",

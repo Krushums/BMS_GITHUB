@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Image, Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -15,7 +15,7 @@ import { Card } from "@/shared/components/Card";
 import { Screen } from "@/shared/components/Screen";
 import { SummaryBar } from "@/shared/components/SummaryBar";
 import { colors, spacing } from "@/shared/theme";
-import { formatDateTimeLabel } from "@/shared/utils/date";
+import { addDays, addWeeks, formatDateTimeLabel, formatWeekRange, getStartOfWeek, isSameDay, isSameWeek } from "@/shared/utils/date";
 
 type ChildTab = "today" | "homework" | "rewards" | "progress" | "activity";
 
@@ -40,7 +40,7 @@ export default function ChildDashboardScreen() {
       />
       <SummaryBar items={getChildSummaryItems(gameplay)} />
 
-      <View style={styles.tabRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
         {childTabs.map((tab) => (
           <Pressable
             accessibilityRole="button"
@@ -54,7 +54,7 @@ export default function ChildDashboardScreen() {
             </AppText>
           </Pressable>
         ))}
-      </View>
+      </ScrollView>
 
       {activeTab === "today" ? <TodayTab gameplay={gameplay} /> : null}
       {activeTab === "homework" ? <HomeworkTab gameplay={gameplay} /> : null}
@@ -67,18 +67,31 @@ export default function ChildDashboardScreen() {
 
 function HomeworkTab({ gameplay }: { gameplay: Gameplay }) {
   const [undo, setUndo] = useState<{ label: string; onUndo: () => void } | null>(null);
-  const weekEntries = getCurrentWeekHomework(gameplay);
-  const analytics = getHomeworkMomentum(gameplay);
-  const todayHomework = getTodayHomework(weekEntries) ?? weekEntries[0] ?? null;
-  const [selectedHomeworkId, setSelectedHomeworkId] = useState(todayHomework?.id ?? "");
-  const selectedHomework = weekEntries.find((item) => item.id === selectedHomeworkId) ?? todayHomework;
+  const [weekStart, setWeekStart] = useState(getStartOfWeek(new Date()));
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const weekDays = getWeekDays(weekStart);
+  const weekEntries = getHomeworkForWeek(gameplay, weekStart);
+  const analytics = getHomeworkMomentum(gameplay, weekStart);
+  const selectedEntries = getHomeworkForDate(gameplay, selectedDate);
+  const selectedHomework = selectedEntries.completed[0] ?? selectedEntries.due[0] ?? null;
+  const currentWeekStart = getStartOfWeek(new Date());
+
+  function selectWeek(nextWeekStart: string) {
+    setWeekStart(nextWeekStart);
+    setSelectedDate(isSameWeek(nextWeekStart, currentWeekStart) ? new Date().toISOString().slice(0, 10) : nextWeekStart);
+  }
 
   return (
     <>
       {undo ? <UndoToast label={undo.label} onDismiss={() => setUndo(null)} onUndo={undo.onUndo} /> : null}
 
       <Card tone="focus">
-        <AppText variant="heading">Homework this week</AppText>
+        <View style={styles.homeworkHeader}>
+          <View style={styles.rewardCopy}>
+            <AppText variant="heading">Homework this week</AppText>
+            <AppText color={colors.inkMuted}>A quick weekly view for homework completed and homework due.</AppText>
+          </View>
+        </View>
         <AppText color={colors.inkMuted}>A quick daily check-in for homework, Satchel screenshots, WhatsApp proof, and worksheet photos.</AppText>
         <View style={styles.homeworkStats}>
           <MiniStat label="Completion" value={`${analytics.completionPercent}%`} />
@@ -88,60 +101,103 @@ function HomeworkTab({ gameplay }: { gameplay: Gameplay }) {
         </View>
       </Card>
 
-      <WeekStrip
-        entries={weekEntries}
-        gameplay={gameplay}
-        onSelect={setSelectedHomeworkId}
-        selectedId={selectedHomework?.id ?? ""}
+      <HomeworkWeekNavigator
+        onCurrent={() => selectWeek(currentWeekStart)}
+        onNext={() => selectWeek(addWeeks(weekStart, 1))}
+        onPrevious={() => selectWeek(addWeeks(weekStart, -1))}
+        weekStart={weekStart}
       />
 
-      {selectedHomework ? (
-        <HomeworkDayCard
-          gameplay={gameplay}
-          homework={selectedHomework}
-          key={selectedHomework.id}
-          setUndo={setUndo}
-          title={isTodayKey(selectedHomework.dueAt) ? "Today's Homework" : "Selected Day"}
-        />
-      ) : null}
+      <WeekStrip
+        days={weekDays}
+        entries={weekEntries}
+        gameplay={gameplay}
+        onSelect={setSelectedDate}
+        selectedDate={selectedDate}
+      />
+
+      <HomeworkDayCard
+        completedItems={selectedEntries.completed}
+        dueItems={selectedEntries.due}
+        gameplay={gameplay}
+        homework={selectedHomework}
+        key={`${selectedDate}-${selectedHomework?.id ?? "new"}`}
+        selectedDate={selectedDate}
+        setUndo={setUndo}
+      />
     </>
   );
 }
 
 function WeekStrip({
+  days,
   entries,
   gameplay,
   onSelect,
-  selectedId
+  selectedDate
 }: {
+  days: string[];
   entries: HomeworkItem[];
   gameplay: Gameplay;
-  onSelect: (homeworkId: string) => void;
-  selectedId: string;
+  onSelect: (date: string) => void;
+  selectedDate: string;
 }) {
   return (
     <Card>
-      <View style={styles.weekStrip}>
-        {entries.map((homework) => {
-          const evidence = gameplay.state.homeworkEvidence.some((item) => item.homeworkId === homework.id && !item.deletedAt);
-          const selected = homework.id === selectedId;
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekStrip}>
+        {days.map((date) => {
+          const dayItems = entries.filter((homework) => isSameDate(homework.dueDate, date) || isSameDate(homework.completedDate, date));
+          const primary = dayItems.find((item) => isSameDate(item.completedDate, date)) ?? dayItems[0] ?? null;
+          const evidence = dayItems.some((homework) =>
+            gameplay.state.homeworkEvidence.some((item) => item.homeworkId === homework.id && !item.deletedAt)
+          );
+          const selected = date === selectedDate;
+          const status = primary?.status ?? "not_started";
 
           return (
             <Pressable
               accessibilityRole="button"
-              key={homework.id}
-              onPress={() => onSelect(homework.id)}
+              key={date}
+              onPress={() => onSelect(date)}
               style={[styles.weekDayButton, selected && styles.weekDayButtonActive]}
             >
-              <AppText color={selected ? colors.surface : colors.ink} variant="caption">
-                {formatShortWeekday(homework.dueAt)}
+              <AppText color={selected ? colors.surface : colors.ink} style={styles.weekDayLabel} variant="caption">
+                {formatShortWeekday(date)}
               </AppText>
-              <Ionicons color={selected ? colors.surface : getHomeworkStatusColor(homework.status)} name={getHomeworkStatusIcon(homework.status)} size={18} />
+              <AppText color={selected ? colors.surface : colors.ink} style={styles.weekDayLabel} variant="caption">
+                {formatDayNumber(date)}
+              </AppText>
+              <Ionicons color={selected ? colors.surface : getHomeworkStatusColor(status)} name={getHomeworkStatusIcon(status)} size={18} />
               {evidence ? <Ionicons color={selected ? colors.surface : colors.accent} name="camera" size={14} /> : <View style={styles.weekEvidenceSpacer} />}
             </Pressable>
           );
         })}
+      </ScrollView>
+    </Card>
+  );
+}
+
+function HomeworkWeekNavigator({
+  onCurrent,
+  onNext,
+  onPrevious,
+  weekStart
+}: {
+  onCurrent: () => void;
+  onNext: () => void;
+  onPrevious: () => void;
+  weekStart: string;
+}) {
+  return (
+    <Card>
+      <View style={styles.weekNavActions}>
+        <Button icon="chevron-back" label="Prev" onPress={onPrevious} style={styles.weekNavButton} variant="secondary" />
+        <Button label="This week" onPress={onCurrent} style={styles.weekNavButton} variant="secondary" />
+        <Button icon="chevron-forward" label="Next" onPress={onNext} style={styles.weekNavButton} variant="secondary" />
       </View>
+      <AppText color={colors.inkMuted} variant="caption">
+        Week beginning: {formatWeekRange(weekStart)}
+      </AppText>
     </Card>
   );
 }
@@ -178,40 +234,137 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function MiniDueCalendar({
+  disabled,
+  onSelect,
+  selectedDate
+}: {
+  disabled: boolean;
+  onSelect: (date: string) => void;
+  selectedDate: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [visibleMonthDate, setVisibleMonthDate] = useState(selectedDate || new Date().toISOString().slice(0, 10));
+  const calendarDays = getMiniCalendarDays(visibleMonthDate);
+
+  return (
+    <View style={styles.datePickerShell}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={disabled}
+        onPress={() => setIsOpen((current) => !current)}
+        style={[styles.datePickerField, disabled && styles.disabledSection]}
+      >
+        <Ionicons color={colors.primaryDark} name="calendar" size={18} />
+        <AppText color={selectedDate ? colors.ink : colors.inkMuted} variant="body">
+          {selectedDate ? formatFriendlyDueDate(selectedDate) : "No due date selected"}
+        </AppText>
+      </Pressable>
+
+      {isOpen ? (
+        <View style={styles.miniCalendar}>
+          <View style={styles.miniCalendarHeader}>
+            <Button icon="chevron-back" label="Prev" onPress={() => setVisibleMonthDate(addMonths(visibleMonthDate, -1))} style={styles.miniCalendarNavButton} variant="quiet" />
+            <View style={styles.miniCalendarTitle}>
+              <AppText variant="body">{formatMonthTitle(visibleMonthDate)}</AppText>
+            </View>
+            <Button icon="chevron-forward" label="Next" onPress={() => setVisibleMonthDate(addMonths(visibleMonthDate, 1))} style={styles.miniCalendarNavButton} variant="quiet" />
+          </View>
+          <View style={styles.miniCalendarGrid}>
+            {calendarDays.map((date) => {
+              const selected = isSameDay(date, selectedDate);
+
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={date}
+                  onPress={() => {
+                    onSelect(date);
+                    setIsOpen(false);
+                  }}
+                  style={[styles.miniCalendarDay, selected && styles.miniCalendarDayActive]}
+                >
+                  <AppText color={selected ? colors.surface : colors.inkMuted} style={styles.miniCalendarLabel} variant="caption">
+                    {formatShortWeekday(date)}
+                  </AppText>
+                  <AppText color={selected ? colors.surface : colors.ink} style={styles.miniCalendarLabel} variant="caption">
+                    {formatDayNumber(date)}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function HomeworkDayCard({
+  completedItems,
+  dueItems,
   gameplay,
   homework,
+  selectedDate,
   setUndo,
-  title
 }: {
+  completedItems: HomeworkItem[];
+  dueItems: HomeworkItem[];
   gameplay: Gameplay;
-  homework: HomeworkItem;
+  homework: HomeworkItem | null;
+  selectedDate: string;
   setUndo: (undo: { label: string; onUndo: () => void } | null) => void;
-  title: string;
 }) {
-  const evidence = gameplay.state.homeworkEvidence.filter((item) => item.homeworkId === homework.id && !item.deletedAt);
-  const [notesDraft, setNotesDraft] = useState(homework.description ?? "");
-  const [selectedSubject, setSelectedSubject] = useState(homework.subject || gameplay.state.homeworkSubjects[0] || "");
-  const [selectedStatus, setSelectedStatus] = useState<HomeworkStatus>(homework.status);
+  const evidence = homework ? gameplay.state.homeworkEvidence.filter((item) => item.homeworkId === homework.id && !item.deletedAt) : [];
+  const [notesDraft, setNotesDraft] = useState(homework?.description ?? "");
+  const [selectedSubject, setSelectedSubject] = useState(homework?.subject || gameplay.state.homeworkSubjects[0] || "");
+  const [selectedStatus, setSelectedStatus] = useState<HomeworkStatus>(homework?.status ?? "not_started");
+  const [dueDateDraft, setDueDateDraft] = useState(homework?.dueAt.slice(0, 10) ?? selectedDate);
   const firstEvidence = evidence[0] ?? null;
-  const dayLabel = homework.title || new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(new Date(homework.dueAt));
+  const dayLabel = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", weekday: "long" }).format(new Date(`${selectedDate}T12:00:00.000Z`));
+  const detailsDisabled = selectedStatus === "incomplete";
+  const isSubmitted = Boolean(homework?.submittedAt);
 
   function saveDay(status = selectedStatus) {
-    const previousStatus = homework.status;
-    const previousSubject = homework.subject;
-    const previousNotes = homework.description;
-    gameplay.updateHomework({
-      description: notesDraft,
-      homeworkId: homework.id,
-      subject: selectedSubject,
+    const completedAt = status === "completed" ? `${selectedDate}T12:00:00.000Z` : null;
+    const dueAt = `${dueDateDraft || selectedDate}T20:00:00.000Z`;
+    const savingDisablesDetails = status === "incomplete";
+    const previousStatus = homework?.status;
+    const previousSubject = homework?.subject;
+    const previousNotes = homework?.description;
+    const previousDueAt = homework?.dueAt;
+    const homeworkId = homework?.id ?? gameplay.createHomework({
+      completedAt,
+      description: savingDisablesDetails ? "" : notesDraft,
+      dueAt,
+      status,
+      subject: savingDisablesDetails ? "" : selectedSubject,
       title: dayLabel
     });
-    gameplay.updateHomeworkStatus(homework.id, status);
+
+    if (homework) {
+      gameplay.updateHomework({
+        description: savingDisablesDetails ? "" : notesDraft,
+        dueAt,
+        homeworkId,
+        subject: savingDisablesDetails ? "" : selectedSubject,
+        title: dayLabel
+      });
+      gameplay.updateHomeworkStatus(homeworkId, status, completedAt);
+    }
+
     setUndo({
       label: "Homework saved",
       onUndo: () => {
-        gameplay.updateHomework({ description: previousNotes, homeworkId: homework.id, subject: previousSubject });
-        gameplay.updateHomeworkStatus(homework.id, previousStatus);
+        if (homework && previousStatus) {
+          gameplay.updateHomework({
+            ...(previousNotes !== undefined ? { description: previousNotes } : {}),
+            ...(previousDueAt !== undefined ? { dueAt: previousDueAt } : {}),
+            homeworkId,
+            ...(previousSubject !== undefined ? { subject: previousSubject } : {})
+          });
+          gameplay.updateHomeworkStatus(homeworkId, previousStatus, homework.completedAt);
+        }
       }
     });
   }
@@ -243,6 +396,12 @@ function HomeworkDayCard({
   }
 
   function attachEvidence(imageUri: string | null, fileName?: string) {
+    if (!homework) {
+      saveDay(selectedStatus === "not_started" ? "in_progress" : selectedStatus);
+      setUndo({ label: "Save this homework first, then attach evidence", onUndo: () => undefined });
+      return;
+    }
+
       if (firstEvidence) {
         gameplay.deleteHomeworkEvidence(firstEvidence.id);
       }
@@ -275,13 +434,52 @@ function HomeworkDayCard({
     <Card>
       <View style={styles.homeworkHeader}>
         <View style={styles.rewardCopy}>
-          <AppText variant="heading">{title}</AppText>
+          <AppText variant="heading">{isTodayKey(selectedDate) ? "Today's Homework" : "Selected Day"}</AppText>
           <AppText color={colors.inkMuted} variant="caption">
-            {dayLabel} · {formatDateTimeLabel(homework.dueAt)}
+            {dayLabel}{isSubmitted ? ` · Submitted ${formatDateTimeLabel(homework?.submittedAt ?? null)}` : ""}
           </AppText>
         </View>
-        <StatusPill status={homework.status} />
+        <StatusPill status={homework?.status ?? selectedStatus} />
       </View>
+
+      {completedItems.length > 0 ? (
+        <View style={styles.homeworkDuePanel}>
+          <AppText variant="body">Homework completed on this day</AppText>
+          {completedItems.map((item) => (
+            <View key={item.id} style={styles.homeworkDueItem}>
+              <AppText variant="caption">{item.subject || "No subject"}</AppText>
+              <AppText color={colors.inkMuted} variant="caption">
+                {item.description || item.title}
+              </AppText>
+              <AppText color={colors.inkMuted} variant="caption">
+                Due {formatDateTimeLabel(item.dueAt)}
+              </AppText>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {dueItems.length > 0 ? (
+        <View style={styles.homeworkDuePanel}>
+          <AppText variant="body">{isTodayKey(selectedDate) ? "Due today" : "Homework due this day"}</AppText>
+          {dueItems.map((item) => (
+            <View key={item.id} style={styles.homeworkDueItem}>
+              <AppText variant="caption">{item.subject || "No subject"}</AppText>
+              <AppText color={colors.inkMuted} variant="caption">
+                {item.description || item.title}
+              </AppText>
+              <View style={styles.dueMetaRow}>
+                <AppText color={item.completedDate ? colors.success : colors.danger} variant="caption">
+                  {item.completedDate ? `Completed on ${formatDateTimeLabel(item.completedDate)}` : "Needs completing"}
+                </AppText>
+                <AppText color={hasHomeworkEvidence(gameplay, item.id) ? colors.accent : colors.inkMuted} variant="caption">
+                  {hasHomeworkEvidence(gameplay, item.id) ? "Evidence attached" : "No evidence"}
+                </AppText>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       <View style={styles.completionToggle}>
         <AppText variant="body">Homework completed today?</AppText>
@@ -303,7 +501,7 @@ function HomeworkDayCard({
         </View>
       </View>
 
-      <View style={styles.statusGrid}>
+      <View style={[styles.statusGrid, detailsDisabled && styles.disabledSection]}>
         {simpleHomeworkStatuses.map((status) => (
           <Pressable
             accessibilityRole="button"
@@ -318,10 +516,18 @@ function HomeworkDayCard({
         ))}
       </View>
 
-      <View style={styles.filterRow}>
+      <View style={[styles.homeworkDateRow, detailsDisabled && styles.disabledSection]}>
+        <View style={styles.rewardCopy}>
+          <AppText variant="caption">Due date</AppText>
+          <MiniDueCalendar disabled={detailsDisabled} selectedDate={dueDateDraft} onSelect={setDueDateDraft} />
+        </View>
+      </View>
+
+      <View style={[styles.filterRow, detailsDisabled && styles.disabledSection]}>
         {gameplay.state.homeworkSubjects.map((subject) => (
           <Pressable
             accessibilityRole="button"
+            disabled={detailsDisabled}
             key={subject}
             onPress={() => {
               setSelectedSubject(subject);
@@ -336,26 +542,23 @@ function HomeworkDayCard({
       </View>
 
       <TextInput
+        editable={!detailsDisabled}
         multiline
         onChangeText={setNotesDraft}
         placeholder="Quick note: fractions worksheet, science revision, English essay..."
         placeholderTextColor={colors.inkMuted}
-        style={[styles.homeworkInput, styles.homeworkNotesInput]}
+        style={[styles.homeworkInput, styles.homeworkNotesInput, detailsDisabled && styles.disabledInput]}
         value={notesDraft}
       />
 
-      <View style={styles.homeworkEvidenceBar}>
-        <Button icon="camera" label="Live photo" onPress={() => addEvidence("camera")} variant="secondary" />
-        <Button icon="image" label="Photo library" onPress={() => addEvidence("library")} variant="secondary" />
-        <Button icon="document-attach" label="File upload" onPress={() => addEvidence("file")} variant="secondary" />
+      <View style={[styles.homeworkEvidenceBar, detailsDisabled && styles.disabledSection]}>
+        <Button icon="camera" label="Live photo" onPress={() => detailsDisabled ? undefined : addEvidence("camera")} variant="secondary" />
+        <Button icon="image" label="Photo library" onPress={() => detailsDisabled ? undefined : addEvidence("library")} variant="secondary" />
+        <Button icon="document-attach" label="File upload" onPress={() => detailsDisabled ? undefined : addEvidence("file")} variant="secondary" />
       </View>
 
       <View style={styles.homeworkEvidenceBar}>
         <Button icon="checkmark-circle" label="Submit / Save today" onPress={() => saveDay(selectedStatus)} />
-        <Button icon="close-circle" label="Mark N/A" onPress={() => {
-          setSelectedStatus("not_applicable");
-          saveDay("not_applicable");
-        }} variant="quiet" />
       </View>
 
       {evidence.length > 0 ? (
@@ -378,7 +581,7 @@ function HomeworkDayCard({
   );
 }
 
-const simpleHomeworkStatuses: HomeworkStatus[] = ["completed", "in_progress", "incomplete", "not_applicable"];
+const simpleHomeworkStatuses: HomeworkStatus[] = ["completed", "in_progress", "incomplete"];
 
 function StatusPill({ status }: { status: HomeworkStatus }) {
   const isComplete = status === "completed" || status === "not_applicable";
@@ -417,8 +620,47 @@ function formatShortWeekday(date: string) {
   return new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(new Date(date));
 }
 
-function getTodayHomework(entries: HomeworkItem[]) {
-  return entries.find((item) => isTodayKey(item.dueAt));
+function formatDayNumber(date: string) {
+  return new Intl.DateTimeFormat(undefined, { day: "numeric" }).format(new Date(`${date}T12:00:00.000Z`));
+}
+
+function formatFriendlyDueDate(date: string) {
+  const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(new Date(`${date}T12:00:00.000Z`));
+  const day = Number(new Intl.DateTimeFormat(undefined, { day: "numeric" }).format(new Date(`${date}T12:00:00.000Z`)));
+  const month = new Intl.DateTimeFormat(undefined, { month: "long" }).format(new Date(`${date}T12:00:00.000Z`));
+  return `${weekday} ${day}${getOrdinalSuffix(day)} ${month}`;
+}
+
+function getOrdinalSuffix(day: number) {
+  if (day % 100 >= 11 && day % 100 <= 13) return "th";
+  if (day % 10 === 1) return "st";
+  if (day % 10 === 2) return "nd";
+  if (day % 10 === 3) return "rd";
+  return "th";
+}
+
+function getMiniCalendarDays(anchorDate: string) {
+  const start = new Date(`${anchorDate}T12:00:00.000Z`);
+  start.setUTCDate(1);
+  const daysInMonth = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0)).getUTCDate();
+
+  return Array.from({ length: daysInMonth }, (_, index) => {
+    const date = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), index + 1, 12));
+    return date.toISOString().slice(0, 10);
+  });
+}
+
+function addMonths(dateKey: string, months: number) {
+  const date = new Date(`${dateKey}T12:00:00.000Z`);
+  date.setUTCMonth(date.getUTCMonth() + months, 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatMonthTitle(dateKey: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    year: "numeric"
+  }).format(new Date(`${dateKey}T12:00:00.000Z`));
 }
 
 function isTodayKey(date: string) {
@@ -427,6 +669,10 @@ function isTodayKey(date: string) {
 
 function isPreviewableImage(uri: string) {
   return /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(uri.split("?")[0] ?? "");
+}
+
+function hasHomeworkEvidence(gameplay: Gameplay, homeworkId: string) {
+  return gameplay.state.homeworkEvidence.some((item) => item.homeworkId === homeworkId && !item.deletedAt);
 }
 
 type Gameplay = ReturnType<typeof useGameplay>;
@@ -983,7 +1229,7 @@ function getLimitLabel(reward: Reward) {
 }
 
 function getChildProgress(gameplay: Gameplay) {
-  const weekStart = getWeekStartKey(new Date());
+  const weekStart = getStartOfWeek(new Date());
   const weekEnd = addDays(weekStart, 6);
   const weeklyTransactions = gameplay.state.pointsTransactions.filter((transaction) =>
     isDateKeyInRange(transaction.createdAt, weekStart, weekEnd)
@@ -1024,27 +1270,38 @@ function getActivityIcon(transaction: PointsTransaction): keyof typeof Ionicons.
   return "sparkles";
 }
 
-function getCurrentWeekHomework(gameplay: Gameplay) {
-  const weekStart = getWeekStartKey(new Date());
+function getWeekDays(weekStart: string) {
+  return Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+}
+
+function getHomeworkForWeek(gameplay: Gameplay, weekStart: string) {
   const weekEnd = addDays(weekStart, 6);
 
   return gameplay.state.homeworkItems
-    .filter((item) => !item.deletedAt && isDateKeyInRange(item.dueAt, weekStart, weekEnd))
+    .filter((item) => !item.deletedAt && (isDateKeyInRange(item.dueDate, weekStart, weekEnd) || isDateKeyInRange(item.completedDate, weekStart, weekEnd)))
     .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
 }
 
-function getHomeworkMomentum(gameplay: Gameplay) {
-  const weekStart = getWeekStartKey(new Date());
+function getHomeworkForDate(gameplay: Gameplay, date: string) {
+  const activeItems = gameplay.state.homeworkItems.filter((item) => !item.deletedAt);
+
+  return {
+    completed: activeItems.filter((item) => isSameDate(item.completedDate, date)),
+    due: activeItems.filter((item) => isSameDate(item.dueDate, date))
+  };
+}
+
+function getHomeworkMomentum(gameplay: Gameplay, weekStart: string) {
   const weekEnd = addDays(weekStart, 6);
-  const weekEntries = gameplay.state.homeworkItems.filter((item) => !item.deletedAt && isDateKeyInRange(item.dueAt, weekStart, weekEnd));
+  const weekEntries = getHomeworkForWeek(gameplay, weekStart);
   const accountableItems = weekEntries.filter((item) => item.status !== "not_applicable");
   const completedItems = accountableItems.filter((item) => item.status === "completed");
   const evidenceDays = new Set(
     gameplay.state.homeworkEvidence
       .filter((evidence) => !evidence.deletedAt)
       .map((evidence) => gameplay.state.homeworkItems.find((item) => item.id === evidence.homeworkId))
-      .filter((item): item is HomeworkItem => Boolean(item && isDateKeyInRange(item.dueAt, weekStart, weekEnd)))
-      .map((item) => item.dueAt.slice(0, 10))
+      .filter((item): item is HomeworkItem => Boolean(item && isDateKeyInRange(item.dueDate, weekStart, weekEnd)))
+      .map((item) => item.dueDate.slice(0, 10))
   ).size;
 
   return {
@@ -1053,6 +1310,10 @@ function getHomeworkMomentum(gameplay: Gameplay) {
     evidenceDays,
     inProgressDays: weekEntries.filter((item) => item.status === "in_progress").length
   };
+}
+
+function isSameDate(value: string | null, date: string) {
+  return isSameDay(value, date);
 }
 
 function getHomeworkConsistencyStreak(gameplay: Gameplay) {
@@ -1072,20 +1333,6 @@ function getHomeworkConsistencyStreak(gameplay: Gameplay) {
   }
 
   return streak;
-}
-
-function getWeekStartKey(date: Date) {
-  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = start.getUTCDay();
-  const distanceFromMonday = day === 0 ? 6 : day - 1;
-  start.setUTCDate(start.getUTCDate() - distanceFromMonday);
-  return start.toISOString().slice(0, 10);
-}
-
-function addDays(dateKey: string, days: number) {
-  const date = new Date(`${dateKey}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
 }
 
 function isDateKeyInRange(value: string | null, startKey: string, endKey: string) {
@@ -1134,6 +1381,32 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md
   },
+  disabledInput: {
+    color: colors.inkMuted
+  },
+  disabledSection: {
+    opacity: 0.42
+  },
+  datePickerField: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: spacing.md
+  },
+  datePickerShell: {
+    gap: spacing.sm
+  },
+  dueMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    justifyContent: "space-between"
+  },
   filterChip: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: 8,
@@ -1154,8 +1427,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm
   },
   homeworkHeader: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     justifyContent: "space-between"
   },
@@ -1163,6 +1437,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm
+  },
+  homeworkDateRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md
+  },
+  homeworkDueItem: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.md
+  },
+  homeworkDuePanel: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 8,
+    gap: spacing.sm,
+    padding: spacing.md
   },
   homeworkInput: {
     backgroundColor: colors.surfaceMuted,
@@ -1173,7 +1466,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     minHeight: 48,
-    minWidth: 160,
+    minWidth: 0,
     paddingHorizontal: spacing.md
   },
   homeworkNotesInput: {
@@ -1208,6 +1501,55 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: spacing.md
   },
+  miniCalendar: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm
+  },
+  miniCalendarDay: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    width: 42,
+    gap: 2,
+    minHeight: 52,
+    paddingVertical: spacing.xs
+  },
+  miniCalendarDayActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primaryDark
+  },
+  miniCalendarGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs
+  },
+  miniCalendarHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between"
+  },
+  miniCalendarLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 14,
+    textAlign: "center"
+  },
+  miniCalendarNavButton: {
+    minWidth: 78,
+    paddingHorizontal: spacing.sm
+  },
+  miniCalendarTitle: {
+    alignItems: "center",
+    flex: 1,
+    minWidth: 0
+  },
   minutesInput: {
     flexGrow: 0,
     minWidth: 96
@@ -1238,8 +1580,9 @@ const styles = StyleSheet.create({
     gap: spacing.xs
   },
   rewardCardTop: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
+    gap: spacing.sm,
     justifyContent: "space-between"
   },
   rewardCostRow: {
@@ -1248,6 +1591,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs
   },
   rewardGem: {
+    flexShrink: 0,
     alignItems: "center",
     backgroundColor: "#FFF4D8",
     borderRadius: 8,
@@ -1305,8 +1649,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm
   },
   routineHeader: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     justifyContent: "space-between"
   },
@@ -1316,19 +1661,19 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.22)",
     borderRadius: 8,
     borderWidth: 1,
-    minWidth: 180,
+    flexGrow: 1,
+    minWidth: 0,
     padding: spacing.lg
   },
   heroContent: {
-    flexDirection: "row",
+    flexDirection: "column",
     flexWrap: "wrap",
     gap: spacing.lg,
     justifyContent: "space-between"
   },
   heroCopy: {
-    flex: 1,
     gap: spacing.sm,
-    minWidth: 220
+    minWidth: 0
   },
   heroGlow: {
     backgroundColor: "rgba(255, 184, 77, 0.34)",
@@ -1353,7 +1698,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: spacing.lg,
     overflow: "hidden",
-    padding: spacing.xl
+    padding: spacing.lg
   },
   shopPage: {
     gap: spacing.xl
@@ -1374,10 +1719,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
-    flexBasis: 220,
+    flexBasis: "100%",
     flexGrow: 1,
     gap: spacing.md,
-    minWidth: 210,
+    minWidth: 0,
     padding: spacing.lg
   },
   shopRewardCardBig: {
@@ -1392,7 +1737,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.2)",
     borderRadius: 8,
     borderWidth: 1,
-    flexBasis: 120,
+    flexBasis: 96,
     flexGrow: 1,
     padding: spacing.md
   },
@@ -1456,7 +1801,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     gap: spacing.xs,
-    minWidth: 68,
+    width: 56,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm
   },
@@ -1464,13 +1809,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderColor: colors.primaryDark
   },
+  weekDayLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 16,
+    textAlign: "center"
+  },
+  weekNavButton: {
+    flexBasis: 0,
+    flexGrow: 1,
+    minWidth: 88,
+    paddingHorizontal: spacing.sm
+  },
   weekEvidenceSpacer: {
     height: 14
   },
   weekStrip: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: spacing.sm
+  },
+  weekNavActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    justifyContent: "space-between"
   },
   smallIconButton: {
     alignItems: "center",
@@ -1487,6 +1849,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     minHeight: 44,
+    minWidth: 104,
     paddingHorizontal: spacing.md
   },
   tabButtonActive: {
@@ -1494,8 +1857,8 @@ const styles = StyleSheet.create({
   },
   tabRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm
+    gap: spacing.sm,
+    paddingRight: spacing.md
   },
   taskBlock: {
     gap: spacing.sm

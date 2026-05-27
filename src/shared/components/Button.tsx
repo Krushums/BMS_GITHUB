@@ -47,17 +47,20 @@ const styles = StyleSheet.create({
   base: {
     alignItems: "center",
     borderRadius: 8,
+    flexShrink: 0,
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "center",
     minHeight: 48,
-    paddingHorizontal: spacing.lg
+    minWidth: 112,
+    paddingHorizontal: spacing.md
   },
   disabled: {
     backgroundColor: colors.surfaceMuted,
     opacity: 0.62
   },
   label: {
+    flexShrink: 1,
     textAlign: "center"
   },
   pressed: {

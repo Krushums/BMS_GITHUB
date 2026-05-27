@@ -71,6 +71,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     gap: spacing.sm,
     minHeight: 118,
+    minWidth: 140,
     padding: spacing.lg
   },
   container: {
@@ -84,7 +85,9 @@ const styles = StyleSheet.create({
     gap: spacing.md
   },
   detailItem: {
-    minWidth: 70
+    flexBasis: 64,
+    flexGrow: 1,
+    minWidth: 0
   },
   labelRow: {
     alignItems: "center",

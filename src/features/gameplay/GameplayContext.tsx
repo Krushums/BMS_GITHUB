@@ -97,6 +97,8 @@ type CreateHomeworkInput = {
   subject: string;
   description?: string;
   dueAt: string;
+  completedAt?: string | null;
+  status?: HomeworkStatus;
   estimatedEffortMinutes?: number | null;
 };
 
@@ -106,6 +108,7 @@ type UpdateHomeworkInput = {
   subject?: string;
   description?: string | null;
   dueAt?: string;
+  completedAt?: string | null;
   estimatedEffortMinutes?: number | null;
 };
 
@@ -162,11 +165,11 @@ type GameplayContextValue = {
   reviewRewardRedemption: (redemptionId: string, decision: "approved" | "rejected") => void;
   submitMorningRoutine: () => void;
   toggleMorningRoutineItem: (itemId: string) => void;
-  createHomework: (input: CreateHomeworkInput) => void;
+  createHomework: (input: CreateHomeworkInput) => string;
   updateHomework: (input: UpdateHomeworkInput) => void;
   deleteHomework: (homeworkId: string) => void;
   restoreHomework: (homeworkId: string) => void;
-  updateHomeworkStatus: (homeworkId: string, status: HomeworkStatus) => void;
+  updateHomeworkStatus: (homeworkId: string, status: HomeworkStatus, completedAt?: string | null) => void;
   logHomeworkSession: (input: HomeworkSessionInput) => void;
   deleteHomeworkSession: (sessionId: string) => void;
   restoreHomeworkSession: (sessionId: string) => void;
@@ -189,11 +192,11 @@ type GameplayAction =
   | { type: "reviewRewardRedemption"; redemptionId: string; decision: "approved" | "rejected" }
   | { type: "submitMorningRoutine" }
   | { type: "toggleMorningRoutineItem"; itemId: string }
-  | { type: "createHomework"; input: CreateHomeworkInput }
+  | { type: "createHomework"; input: CreateHomeworkInput & { id?: string } }
   | { type: "updateHomework"; input: UpdateHomeworkInput }
   | { type: "deleteHomework"; homeworkId: string }
   | { type: "restoreHomework"; homeworkId: string }
-  | { type: "updateHomeworkStatus"; homeworkId: string; status: HomeworkStatus }
+  | { type: "updateHomeworkStatus"; homeworkId: string; status: HomeworkStatus; completedAt?: string | null }
   | { type: "logHomeworkSession"; input: HomeworkSessionInput }
   | { type: "deleteHomeworkSession"; sessionId: string }
   | { type: "restoreHomeworkSession"; sessionId: string }
@@ -475,7 +478,11 @@ export function GameplayProvider({ children }: PropsWithChildren) {
       cancelTask: (assignmentId) => dispatch({ assignmentId, type: "cancelTask" }),
       childTasks,
       completedTodayTasks,
-      createHomework: (input) => dispatch({ input, type: "createHomework" }),
+      createHomework: (input) => {
+        const id = createId("homework");
+        dispatch({ input: { ...input, id }, type: "createHomework" });
+        return id;
+      },
       deleteHomework: (homeworkId) => dispatch({ homeworkId, type: "deleteHomework" }),
       deleteHomeworkEvidence: (evidenceId) => dispatch({ evidenceId, type: "deleteHomeworkEvidence" }),
       deleteHomeworkSession: (sessionId) => dispatch({ sessionId, type: "deleteHomeworkSession" }),
@@ -509,7 +516,8 @@ export function GameplayProvider({ children }: PropsWithChildren) {
       toggleMorningRoutineItem: (itemId) => dispatch({ itemId, type: "toggleMorningRoutineItem" }),
       logHomeworkSession: (input) => dispatch({ input, type: "logHomeworkSession" }),
       updateHomework: (input) => dispatch({ input, type: "updateHomework" }),
-      updateHomeworkStatus: (homeworkId, status) => dispatch({ homeworkId, status, type: "updateHomeworkStatus" }),
+      updateHomeworkStatus: (homeworkId, status, completedAt) =>
+        dispatch({ ...(completedAt !== undefined ? { completedAt } : {}), homeworkId, status, type: "updateHomeworkStatus" }),
       updateTask: (input) => dispatch({ input, type: "updateTask" }),
       upcomingTasks
     };
@@ -717,6 +725,7 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
 
     case "createHomework": {
       const now = new Date().toISOString();
+      const completedAt = action.input.status === "completed" ? action.input.completedAt ?? now : null;
 
       return {
         ...state,
@@ -724,16 +733,19 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
           {
             assignedAt: now,
             childId,
-            completedAt: null,
+            completedAt,
+            completedDate: completedAt,
+            createdAt: now,
             createdBy: parentId,
             deletedAt: null,
             description: action.input.description?.trim() || null,
             dueAt: action.input.dueAt,
+            dueDate: action.input.dueAt,
             estimatedEffortMinutes: action.input.estimatedEffortMinutes ?? null,
-            id: createId("homework"),
-            status: "not_started",
+            id: action.input.id ?? createId("homework"),
+            status: action.input.status ?? "not_started",
             subject: action.input.subject.trim(),
-            submittedAt: null,
+            submittedAt: action.input.status ? now : null,
             title: action.input.title.trim(),
             updatedAt: now
           },
@@ -751,8 +763,11 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
           item.id === action.input.homeworkId
             ? {
                 ...item,
+                completedAt: action.input.completedAt === undefined ? item.completedAt : action.input.completedAt,
+                completedDate: action.input.completedAt === undefined ? item.completedDate : action.input.completedAt,
                 description: action.input.description === undefined ? item.description : action.input.description?.trim() || null,
                 dueAt: action.input.dueAt ?? item.dueAt,
+                dueDate: action.input.dueAt ?? item.dueDate,
                 estimatedEffortMinutes:
                   action.input.estimatedEffortMinutes === undefined
                     ? item.estimatedEffortMinutes
@@ -787,6 +802,10 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
 
     case "updateHomeworkStatus": {
       const now = new Date().toISOString();
+      const completedAt =
+        action.status === "completed"
+          ? action.completedAt ?? now
+          : null;
 
       return {
         ...state,
@@ -794,7 +813,8 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
           item.id === action.homeworkId
             ? {
                 ...item,
-                completedAt: action.status === "completed" ? item.completedAt ?? now : null,
+                completedAt,
+                completedDate: completedAt,
                 status: action.status,
                 submittedAt: now,
                 updatedAt: now
@@ -1131,10 +1151,13 @@ function createInitialHomeworkWeekEntries(): HomeworkItem[] {
       assignedAt: now,
       childId,
       completedAt: null,
+      completedDate: null,
+      createdAt: now,
       createdBy: parentId,
       deletedAt: null,
       description: "",
       dueAt: `${date}T20:00:00.000Z`,
+      dueDate: `${date}T20:00:00.000Z`,
       estimatedEffortMinutes: null,
       id: `homework-${date}`,
       status: "not_applicable",

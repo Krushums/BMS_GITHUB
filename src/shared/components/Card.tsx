@@ -18,6 +18,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     gap: spacing.md,
+    minWidth: 0,
     padding: spacing.lg
   },
   default: {

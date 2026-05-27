@@ -7,11 +7,14 @@ export type HomeworkItem = {
   subject: string;
   description: string | null;
   assignedAt: string;
+  createdAt: string;
   dueAt: string;
+  dueDate: string;
   status: HomeworkStatus;
   estimatedEffortMinutes: number | null;
   createdBy: string;
   completedAt: string | null;
+  completedDate: string | null;
   submittedAt: string | null;
   updatedAt: string;
   deletedAt: string | null;

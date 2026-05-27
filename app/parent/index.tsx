@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Platform, Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { DashboardHeader } from "@/features/dashboard/DashboardHeader";
@@ -13,7 +13,7 @@ import { Card } from "@/shared/components/Card";
 import { Screen } from "@/shared/components/Screen";
 import { SummaryBar, SummaryCardItem } from "@/shared/components/SummaryBar";
 import { colors, spacing } from "@/shared/theme";
-import { formatDateLabel, formatDateTimeLabel } from "@/shared/utils/date";
+import { addDays, addWeeks, formatDateLabel, formatDateTimeLabel, formatWeekRange, getStartOfWeek, isSameDay } from "@/shared/utils/date";
 
 type ParentTab = "dashboard" | "tasks" | "homework" | "behaviour" | "rewards" | "review" | "history" | "analytics";
 
@@ -63,7 +63,7 @@ export default function ParentDashboardScreen() {
   return (
     <Screen>
       <DashboardHeader greeting="Family pulse" points={gameplay.state.child.points} streak={gameplay.state.child.streak} />
-      <View style={styles.tabRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
         {tabs.map((tab) => (
           <Button
             key={tab.id}
@@ -72,7 +72,7 @@ export default function ParentDashboardScreen() {
             variant={activeTab === tab.id ? "primary" : "secondary"}
           />
         ))}
-      </View>
+      </ScrollView>
 
       {activeTab === "dashboard" ? <DashboardTab gameplay={gameplay} setActiveTab={setActiveTab} /> : null}
       {activeTab === "tasks" ? <TasksTab gameplay={gameplay} /> : null}
@@ -337,8 +337,10 @@ function TaskEditorCard(props: {
 }
 
 function HomeworkTab({ gameplay }: { gameplay: Gameplay }) {
-  const analytics = getParentHomeworkAnalytics(gameplay);
-  const weekEntries = getCurrentWeekParentHomework(gameplay);
+  const [weekStart, setWeekStart] = useState(getStartOfWeek(new Date()));
+  const analytics = getParentHomeworkAnalytics(gameplay, weekStart);
+  const weekEntries = getCurrentWeekParentHomework(gameplay, weekStart);
+  const weekDays = getWeekDays(weekStart);
   const [subjectDraft, setSubjectDraft] = useState("");
 
   function addSubject() {
@@ -355,14 +357,29 @@ function HomeworkTab({ gameplay }: { gameplay: Gameplay }) {
   return (
     <>
       <Card tone="focus">
-        <AppText variant="heading">Weekly Homework</AppText>
-        <AppText color={colors.inkMuted}>A lightweight weekly view for daily academic accountability.</AppText>
+        <View style={styles.sectionHeader}>
+          <View style={styles.cardText}>
+            <AppText variant="heading">Weekly Homework</AppText>
+            <AppText color={colors.inkMuted}>A lightweight weekly view for daily academic accountability.</AppText>
+          </View>
+        </View>
         <View style={styles.summaryTriplet}>
           <LedgerMetric color={colors.success} label="Completion" value={`${analytics.completionPercent}%`} />
           <LedgerMetric color={colors.sky} label="Evidence days" value={analytics.evidenceDays} />
           <LedgerMetric color={colors.accent} label="In progress" value={analytics.inProgressDays} />
           <LedgerMetric color={colors.success} label="Complete days" value={analytics.completedDays} />
         </View>
+      </Card>
+
+      <Card>
+        <View style={styles.homeworkNav}>
+          <Button label="Prev" onPress={() => setWeekStart(addWeeks(weekStart, -1))} style={styles.homeworkNavButton} variant="secondary" />
+          <Button label="This week" onPress={() => setWeekStart(getStartOfWeek(new Date()))} style={styles.homeworkNavButton} variant="secondary" />
+          <Button label="Next" onPress={() => setWeekStart(addWeeks(weekStart, 1))} style={styles.homeworkNavButton} variant="secondary" />
+        </View>
+        <AppText color={colors.inkMuted} variant="caption">
+          Week beginning: {formatWeekRange(weekStart)}
+        </AppText>
       </Card>
 
       <Card>
@@ -394,25 +411,57 @@ function HomeworkTab({ gameplay }: { gameplay: Gameplay }) {
 
       <AppText variant="heading">Current week</AppText>
       <View style={styles.homeworkWeekGrid}>
-        {weekEntries.map((homework) => (
-          <ParentHomeworkCard gameplay={gameplay} homework={homework} key={homework.id} />
+        {weekDays.map((date) => (
+          <ParentHomeworkDayCard date={date} gameplay={gameplay} items={weekEntries} key={date} />
         ))}
       </View>
     </>
   );
 }
 
-function ParentHomeworkCard({ gameplay, homework }: { gameplay: Gameplay; homework: HomeworkItem }) {
-  const evidence = gameplay.state.homeworkEvidence.filter((item) => item.homeworkId === homework.id && !item.deletedAt);
-  const hasEvidence = evidence.length > 0;
+function ParentHomeworkDayCard({ date, gameplay, items }: { date: string; gameplay: Gameplay; items: HomeworkItem[] }) {
+  const dueItems = items.filter((homework) => isSameDate(homework.dueDate, date));
+  const completedItems = items.filter((homework) => isSameDate(homework.completedDate, date));
 
   return (
     <Card style={styles.homeworkGridCard}>
       <View style={styles.sectionHeader}>
-        <View>
+        <View style={styles.cardText}>
+          <AppText variant="body">{formatShortWeekday(date)}</AppText>
+          <AppText color={colors.inkMuted} variant="caption">{formatDateLabel(date)}</AppText>
+        </View>
+      </View>
+
+      <ParentHomeworkGroup gameplay={gameplay} items={dueItems} title="Due this day" />
+      <ParentHomeworkGroup gameplay={gameplay} items={completedItems} title="Submitted/completed this day" />
+    </Card>
+  );
+}
+
+function ParentHomeworkGroup({ gameplay, items, title }: { gameplay: Gameplay; items: HomeworkItem[]; title: string }) {
+  return (
+    <View style={styles.homeworkGroup}>
+      <AppText color={colors.inkMuted} variant="caption">{title}</AppText>
+      {items.length === 0 ? <AppText color={colors.inkMuted} variant="caption">None</AppText> : null}
+      {items.slice(0, 3).map((homework) => (
+        <ParentHomeworkMiniCard gameplay={gameplay} homework={homework} key={homework.id} />
+      ))}
+      {items.length > 3 ? <AppText color={colors.inkMuted} variant="caption">+{items.length - 3} more</AppText> : null}
+    </View>
+  );
+}
+
+function ParentHomeworkMiniCard({ gameplay, homework }: { gameplay: Gameplay; homework: HomeworkItem }) {
+  const evidence = gameplay.state.homeworkEvidence.filter((item) => item.homeworkId === homework.id && !item.deletedAt);
+  const hasEvidence = evidence.length > 0;
+
+  return (
+    <View style={styles.homeworkMiniCard}>
+      <View style={styles.homeworkMiniHeader}>
+        <View style={styles.cardText}>
           <AppText variant="body">{homework.title}</AppText>
           <AppText color={colors.inkMuted} variant="caption">
-            {homework.subject || "No subject"} · {formatDateTimeLabel(homework.dueAt)}
+            {homework.subject || "No subject"}
           </AppText>
         </View>
         <View style={styles.statusPill}>
@@ -421,22 +470,23 @@ function ParentHomeworkCard({ gameplay, homework }: { gameplay: Gameplay; homewo
           </AppText>
         </View>
       </View>
-      {homework.description ? <AppText color={colors.inkMuted}>{homework.description}</AppText> : null}
+      {homework.description ? <AppText color={colors.inkMuted} style={styles.notePreview} variant="caption">{homework.description}</AppText> : null}
       <View style={styles.summaryTriplet}>
         <AppText color={hasEvidence ? colors.success : colors.inkMuted} variant="caption">
           Evidence {hasEvidence ? "uploaded" : "not uploaded"}
         </AppText>
         <AppText color={homework.status === "completed" ? colors.success : colors.inkMuted} variant="caption">
-          Completed {homework.status === "completed" ? "yes" : homework.status === "not_applicable" ? "N/A" : "no"}
+          {homework.status === "completed" ? "Completed" : homework.status === "incomplete" ? "Incomplete" : homework.status === "in_progress" ? "In progress" : "N/A"}
         </AppText>
-        <AppText color={colors.inkMuted} variant="caption">Updated {formatDateTimeLabel(homework.updatedAt)}</AppText>
+        <AppText color={colors.inkMuted} variant="caption">Due {formatDateLabel(homework.dueDate)}</AppText>
+        <AppText color={colors.inkMuted} variant="caption">Done {homework.completedDate ? formatDateLabel(homework.completedDate) : "Not yet"}</AppText>
       </View>
       {evidence.slice(0, 2).map((item) => (
-        <AppText color={colors.inkMuted} key={item.id} variant="caption">
+        <AppText color={colors.inkMuted} key={item.id} style={styles.notePreview} variant="caption">
           Evidence submitted {formatDateTimeLabel(item.submittedAt)}{item.comment ? ` · ${item.comment}` : ""}
         </AppText>
       ))}
-    </Card>
+    </View>
   );
 }
 
@@ -743,18 +793,19 @@ function formatHomeworkStatus(status: HomeworkItem["status"]) {
   return "N/A";
 }
 
-function getParentHomeworkAnalytics(gameplay: Gameplay) {
-  const weekStart = getWeekStartKey(new Date());
+function getParentHomeworkAnalytics(gameplay: Gameplay, weekStart: string) {
   const weekEnd = addDays(weekStart, 6);
-  const weekEntries = gameplay.state.homeworkItems.filter((item) => !item.deletedAt && isDateKeyInRange(item.dueAt, weekStart, weekEnd));
+  const weekEntries = gameplay.state.homeworkItems.filter(
+    (item) => !item.deletedAt && (isDateKeyInRange(item.dueDate, weekStart, weekEnd) || isDateKeyInRange(item.completedDate, weekStart, weekEnd))
+  );
   const accountableItems = weekEntries.filter((item) => item.status !== "not_applicable");
   const completedItems = accountableItems.filter((item) => item.status === "completed");
   const evidenceDays = new Set(
     gameplay.state.homeworkEvidence
       .filter((evidence) => !evidence.deletedAt)
       .map((evidence) => gameplay.state.homeworkItems.find((item) => item.id === evidence.homeworkId))
-      .filter((item): item is HomeworkItem => Boolean(item && isDateKeyInRange(item.dueAt, weekStart, weekEnd)))
-      .map((item) => item.dueAt.slice(0, 10))
+      .filter((item): item is HomeworkItem => Boolean(item && (isDateKeyInRange(item.dueDate, weekStart, weekEnd) || isDateKeyInRange(item.completedDate, weekStart, weekEnd))))
+      .map((item) => (item.completedDate ?? item.dueDate).slice(0, 10))
   ).size;
 
   return {
@@ -765,13 +816,24 @@ function getParentHomeworkAnalytics(gameplay: Gameplay) {
   };
 }
 
-function getCurrentWeekParentHomework(gameplay: Gameplay) {
-  const weekStart = getWeekStartKey(new Date());
+function getCurrentWeekParentHomework(gameplay: Gameplay, weekStart: string) {
   const weekEnd = addDays(weekStart, 6);
 
   return gameplay.state.homeworkItems
-    .filter((item) => !item.deletedAt && isDateKeyInRange(item.dueAt, weekStart, weekEnd))
+    .filter((item) => !item.deletedAt && (isDateKeyInRange(item.dueDate, weekStart, weekEnd) || isDateKeyInRange(item.completedDate, weekStart, weekEnd)))
     .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+}
+
+function getWeekDays(weekStart: string) {
+  return Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+}
+
+function isSameDate(value: string | null, date: string) {
+  return isSameDay(value, date);
+}
+
+function formatShortWeekday(date: string) {
+  return new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(new Date(`${date}T12:00:00.000Z`));
 }
 
 function getHomeworkConsistencyStreak(gameplay: Gameplay) {
@@ -1135,7 +1197,7 @@ function getAnalytics(gameplay: Gameplay) {
   const behaviourTransactions = gameplay.state.pointsTransactions.filter((transaction) => transaction.type === "behaviour_adjustment");
   const positiveBreakdown = getCategoryBreakdown(positiveAdjustments, behaviourTransactions);
   const negativeBreakdown = getCategoryBreakdown(negativeAdjustments, behaviourTransactions);
-  const fallbackWeek = createEmptyWeeklySummary(getWeekStartKey(new Date()));
+  const fallbackWeek = createEmptyWeeklySummary(getStartOfWeek(new Date()));
   const firstWeek = weeklySummaries[0] ?? fallbackWeek;
   const bestWeek = weeklySummaries.reduce((best, week) => (week.netTotal > best.netTotal ? week : best), firstWeek);
   const weakestWeek = weeklySummaries.reduce((weakest, week) => (week.netTotal < weakest.netTotal ? week : weakest), firstWeek);
@@ -1171,12 +1233,12 @@ function createEmptyWeeklySummary(weekStart: string): WeeklySummary {
 }
 
 function getWeeklySummaries(gameplay: Gameplay): WeeklySummary[] {
-  const weekKeys = new Set<string>([getWeekStartKey(new Date())]);
+  const weekKeys = new Set<string>([getStartOfWeek(new Date())]);
 
-  gameplay.state.pointsTransactions.forEach((transaction) => weekKeys.add(getWeekStartKey(new Date(transaction.createdAt))));
+  gameplay.state.pointsTransactions.forEach((transaction) => weekKeys.add(getStartOfWeek(transaction.createdAt)));
   gameplay.state.assignments.forEach((assignment) => {
     if (assignment.completedAt) {
-      weekKeys.add(getWeekStartKey(new Date(assignment.completedAt)));
+      weekKeys.add(getStartOfWeek(assignment.completedAt));
     }
   });
 
@@ -1229,7 +1291,7 @@ function getMostCommonCategory(items: CategoryBreakdownItem[]) {
 }
 
 function getHomeworkConsistency(gameplay: Gameplay) {
-  const currentWeekStart = getWeekStartKey(new Date());
+  const currentWeekStart = getStartOfWeek(new Date());
   const currentWeekEnd = addDays(currentWeekStart, 6);
   const lastWeekStart = addDays(currentWeekStart, -7);
   const lastWeekEnd = addDays(currentWeekStart, -1);
@@ -1292,20 +1354,6 @@ function getWeeklyLevel(netTotal: number) {
   return "Reset";
 }
 
-function getWeekStartKey(date: Date) {
-  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = start.getUTCDay();
-  const distanceFromMonday = day === 0 ? 6 : day - 1;
-  start.setUTCDate(start.getUTCDate() - distanceFromMonday);
-  return start.toISOString().slice(0, 10);
-}
-
-function addDays(dateKey: string, days: number) {
-  const date = new Date(`${dateKey}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
 function isDateKeyInRange(value: string | null, startKey: string, endKey: string) {
   if (!value) {
     return false;
@@ -1322,6 +1370,7 @@ function normaliseCategory(value: string) {
 const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
     justifyContent: "flex-end"
   },
@@ -1330,8 +1379,9 @@ const styles = StyleSheet.create({
     gap: spacing.xs
   },
   alertHeader: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md
   },
   alertIcon: {
@@ -1358,9 +1408,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm
   },
   analyticsColumn: {
-    flexBasis: 360,
+    flexBasis: 280,
     flexGrow: 1,
-    minWidth: 280
+    minWidth: 0
   },
   analyticsGrid: {
     alignItems: "stretch",
@@ -1403,10 +1453,10 @@ const styles = StyleSheet.create({
     padding: spacing.md
   },
   behaviourColumn: {
-    flexBasis: 420,
+    flexBasis: 320,
     flexGrow: 1,
     flexShrink: 1,
-    minWidth: 280
+    minWidth: 0
   },
   behaviourSection: {
     gap: spacing.md
@@ -1489,7 +1539,14 @@ const styles = StyleSheet.create({
   },
   grid: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm
+  },
+  cardText: {
+    flex: 1,
+    flexShrink: 1,
+    gap: spacing.xs,
+    minWidth: 0
   },
   input: {
     backgroundColor: colors.surfaceMuted,
@@ -1502,8 +1559,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md
   },
   homeworkGridCard: {
-    flexBasis: 220,
-    flexGrow: 1
+    flexBasis: 260,
+    flexGrow: 1,
+    minWidth: 0
+  },
+  homeworkGroup: {
+    gap: spacing.sm
+  },
+  homeworkMiniCard: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    minWidth: 0,
+    padding: spacing.md
+  },
+  homeworkMiniHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    minWidth: 0
+  },
+  homeworkNav: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    justifyContent: "flex-end"
+  },
+  homeworkNavButton: {
+    flexBasis: 0,
+    flexGrow: 1,
+    minWidth: 88,
+    paddingHorizontal: spacing.sm
   },
   homeworkWeekGrid: {
     flexDirection: "row",
@@ -1524,7 +1613,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm
   },
   ledgerMetric: {
-    flexBasis: 120,
+    flexBasis: 96,
     flexGrow: 1,
     gap: spacing.xs
   },
@@ -1533,8 +1622,9 @@ const styles = StyleSheet.create({
     gap: spacing.xs
   },
   logHeader: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.md,
     justifyContent: "space-between"
   },
@@ -1561,6 +1651,10 @@ const styles = StyleSheet.create({
   },
   negativePreset: {
     backgroundColor: "#FFF8F4"
+  },
+  notePreview: {
+    flexShrink: 1,
+    lineHeight: 18
   },
   noteInput: {
     minHeight: 88,
@@ -1598,7 +1692,9 @@ const styles = StyleSheet.create({
   sectionHeader: {
     alignItems: "flex-start",
     flexDirection: "row",
-    justifyContent: "space-between"
+    gap: spacing.md,
+    justifyContent: "space-between",
+    minWidth: 0
   },
   subjectChip: {
     backgroundColor: colors.surfaceMuted,
@@ -1630,11 +1726,11 @@ const styles = StyleSheet.create({
   summaryTriplet: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.md
+    gap: spacing.sm
   },
   tabRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm
+    gap: spacing.sm,
+    paddingRight: spacing.md
   }
 });
