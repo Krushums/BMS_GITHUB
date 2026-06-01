@@ -3,6 +3,7 @@ import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } f
 import { Ionicons } from "@expo/vector-icons";
 
 import { DashboardHeader } from "@/features/dashboard/DashboardHeader";
+import { useMockAuth } from "@/features/auth/MockAuthContext";
 import { useGameplay } from "@/features/gameplay/GameplayContext";
 import { HomeworkItem, PointsTransaction } from "@/domain";
 import { RewardCard } from "@/features/rewards/RewardCard";
@@ -11,9 +12,10 @@ import { AppText } from "@/shared/components/AppText";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
 import { Screen } from "@/shared/components/Screen";
+import { ProfileMenu } from "@/shared/components/ProfileMenu";
 import { SummaryBar, SummaryCardItem } from "@/shared/components/SummaryBar";
 import { colors, spacing } from "@/shared/theme";
-import { addDays, addWeeks, formatDateLabel, formatDateTimeLabel, formatWeekRange, getStartOfWeek, isSameDay } from "@/shared/utils/date";
+import { addDays, addWeeks, formatDateLabel, formatDateTimeLabel, formatWeekRange, getStartOfWeek } from "@/shared/utils/date";
 
 type ParentTab = "dashboard" | "tasks" | "homework" | "behaviour" | "rewards" | "review" | "history" | "analytics";
 
@@ -58,11 +60,18 @@ const defaultBehaviourPreset: BehaviourPreset = positiveAdjustments[0] ?? {
 
 export default function ParentDashboardScreen() {
   const gameplay = useGameplay();
+  const auth = useMockAuth();
   const [activeTab, setActiveTab] = useState<ParentTab>("dashboard");
+  const profileName = auth.currentParent?.fullName ?? "Parent";
 
   return (
     <Screen>
-      <DashboardHeader greeting="Family pulse" points={gameplay.state.child.points} streak={gameplay.state.child.streak} />
+      <View style={styles.headerRow}>
+        <View style={styles.headerContent}>
+          <DashboardHeader greeting="Family pulse" points={gameplay.state.child.points} streak={gameplay.state.child.streak} />
+        </View>
+        <ProfileMenu displayName={profileName} />
+      </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
         {tabs.map((tab) => (
           <Button
@@ -456,7 +465,7 @@ function ParentHomeworkMiniCard({ gameplay, homework }: { gameplay: Gameplay; ho
   const hasEvidence = evidence.length > 0;
 
   return (
-    <View style={styles.homeworkMiniCard}>
+    <View style={[styles.homeworkMiniCard, getParentHomeworkListToneStyle(homework.status)]}>
       <View style={styles.homeworkMiniHeader}>
         <View style={styles.cardText}>
           <AppText variant="body">{homework.title}</AppText>
@@ -464,8 +473,8 @@ function ParentHomeworkMiniCard({ gameplay, homework }: { gameplay: Gameplay; ho
             {homework.subject || "No subject"}
           </AppText>
         </View>
-        <View style={styles.statusPill}>
-          <AppText color={homework.status === "completed" ? colors.success : colors.inkMuted} variant="caption">
+        <View style={[styles.statusPill, getParentHomeworkStatusPillStyle(homework.status)]}>
+          <AppText color={homework.status === "completed" ? colors.success : homework.status === "incomplete" ? colors.danger : homework.status === "in_progress" ? colors.accent : colors.inkMuted} variant="caption">
             {formatHomeworkStatus(homework.status)}
           </AppText>
         </View>
@@ -793,10 +802,27 @@ function formatHomeworkStatus(status: HomeworkItem["status"]) {
   return "N/A";
 }
 
+function getParentHomeworkListToneStyle(status: HomeworkItem["status"]) {
+  if (status === "completed") return styles.homeworkMiniComplete;
+  if (status === "incomplete") return styles.homeworkMiniIncomplete;
+  if (status === "in_progress") return styles.homeworkMiniInProgress;
+  return null;
+}
+
+function getParentHomeworkStatusPillStyle(status: HomeworkItem["status"]) {
+  if (status === "completed") return styles.statusPillComplete;
+  if (status === "incomplete") return styles.statusPillIncomplete;
+  if (status === "in_progress") return styles.statusPillInProgress;
+  return null;
+}
+
 function getParentHomeworkAnalytics(gameplay: Gameplay, weekStart: string) {
   const weekEnd = addDays(weekStart, 6);
   const weekEntries = gameplay.state.homeworkItems.filter(
-    (item) => !item.deletedAt && (isDateKeyInRange(item.dueDate, weekStart, weekEnd) || isDateKeyInRange(item.completedDate, weekStart, weekEnd))
+    (item) =>
+      !item.deletedAt &&
+      !isPlaceholderHomework(item) &&
+      (isDateKeyInRange(item.dueDate, weekStart, weekEnd) || isDateKeyInRange(item.completedDate, weekStart, weekEnd))
   );
   const accountableItems = weekEntries.filter((item) => item.status !== "not_applicable");
   const completedItems = accountableItems.filter((item) => item.status === "completed");
@@ -804,7 +830,14 @@ function getParentHomeworkAnalytics(gameplay: Gameplay, weekStart: string) {
     gameplay.state.homeworkEvidence
       .filter((evidence) => !evidence.deletedAt)
       .map((evidence) => gameplay.state.homeworkItems.find((item) => item.id === evidence.homeworkId))
-      .filter((item): item is HomeworkItem => Boolean(item && (isDateKeyInRange(item.dueDate, weekStart, weekEnd) || isDateKeyInRange(item.completedDate, weekStart, weekEnd))))
+      .filter(
+        (item): item is HomeworkItem =>
+          Boolean(
+            item &&
+              !isPlaceholderHomework(item) &&
+              (isDateKeyInRange(item.dueDate, weekStart, weekEnd) || isDateKeyInRange(item.completedDate, weekStart, weekEnd))
+          )
+      )
       .map((item) => (item.completedDate ?? item.dueDate).slice(0, 10))
   ).size;
 
@@ -820,7 +853,12 @@ function getCurrentWeekParentHomework(gameplay: Gameplay, weekStart: string) {
   const weekEnd = addDays(weekStart, 6);
 
   return gameplay.state.homeworkItems
-    .filter((item) => !item.deletedAt && (isDateKeyInRange(item.dueDate, weekStart, weekEnd) || isDateKeyInRange(item.completedDate, weekStart, weekEnd)))
+    .filter(
+      (item) =>
+        !item.deletedAt &&
+        !isPlaceholderHomework(item) &&
+        (isDateKeyInRange(item.dueDate, weekStart, weekEnd) || isDateKeyInRange(item.completedDate, weekStart, weekEnd))
+    )
     .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
 }
 
@@ -829,11 +867,31 @@ function getWeekDays(weekStart: string) {
 }
 
 function isSameDate(value: string | null, date: string) {
-  return isSameDay(value, date);
+  const valueKey = toSafeDateKey(value);
+  const dateKey = toSafeDateKey(date);
+  return Boolean(valueKey && dateKey && valueKey === dateKey);
 }
 
 function formatShortWeekday(date: string) {
-  return new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(new Date(`${date}T12:00:00.000Z`));
+  const parsedDate = parseDateKey(date) ?? new Date();
+  return new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(parsedDate);
+}
+
+function parseDateKey(date: string | null | undefined) {
+  if (!date) {
+    return null;
+  }
+
+  const parsedDate = new Date(`${date.slice(0, 10)}T12:00:00.000Z`);
+  return Number.isFinite(parsedDate.getTime()) ? parsedDate : null;
+}
+
+function toSafeDateKey(date: string | null | undefined) {
+  return parseDateKey(date)?.toISOString().slice(0, 10) ?? null;
+}
+
+function isPlaceholderHomework(item: HomeworkItem) {
+  return item.status === "not_applicable" && !item.subject.trim() && !item.description?.trim();
 }
 
 function getHomeworkConsistencyStreak(gameplay: Gameplay) {
@@ -1542,6 +1600,16 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm
   },
+  headerContent: {
+    flex: 1,
+    minWidth: 0
+  },
+  headerRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
   cardText: {
     flex: 1,
     flexShrink: 1,
@@ -1575,12 +1643,21 @@ const styles = StyleSheet.create({
     minWidth: 0,
     padding: spacing.md
   },
+  homeworkMiniComplete: {
+    borderColor: colors.success
+  },
   homeworkMiniHeader: {
     alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "space-between",
     minWidth: 0
+  },
+  homeworkMiniIncomplete: {
+    borderColor: colors.danger
+  },
+  homeworkMiniInProgress: {
+    borderColor: colors.accent
   },
   homeworkNav: {
     flexDirection: "row",
@@ -1722,6 +1799,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm
+  },
+  statusPillComplete: {
+    backgroundColor: "#DDF8EA"
+  },
+  statusPillIncomplete: {
+    backgroundColor: "#FFE4E4"
+  },
+  statusPillInProgress: {
+    backgroundColor: "#FFF2D8"
   },
   summaryTriplet: {
     flexDirection: "row",

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, StyleSheet, TextInput, View } from "react-native";
+import { StyleSheet, TextInput, View } from "react-native";
 import { router } from "expo-router";
 
 import { useMockAuth } from "@/features/auth/MockAuthContext";
@@ -9,102 +9,75 @@ import { Card } from "@/shared/components/Card";
 import { Screen } from "@/shared/components/Screen";
 import { colors, spacing } from "@/shared/theme";
 
+type AuthMode = "login" | "signup";
+
 export default function AuthScreen() {
   const auth = useMockAuth();
+  const [mode, setMode] = useState<AuthMode>("login");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
 
-  function validateParentCredentials() {
+  function validateBase() {
     if (!email.trim()) {
-      setErrorMessage("Enter an email address.");
-      Alert.alert("Email needed", "Enter an email address.");
+      setMessage({ text: "Enter an email address.", tone: "error" });
       return false;
     }
 
     if (password.length < 4) {
-      setErrorMessage("Password must be at least 4 characters for the mock MVP login.");
-      Alert.alert("Password needed", "Use a password with at least 4 characters.");
+      setMessage({ text: "Password must be at least 4 characters for this MVP.", tone: "error" });
       return false;
     }
 
-    setErrorMessage(null);
     return true;
   }
 
   function handleLogin() {
     console.log("login pressed");
-    if (!validateParentCredentials()) {
+    if (!validateBase()) {
       return;
     }
 
-    const submittedEmail = email.trim();
-    console.log("submitted email", submittedEmail);
-    console.log("selected role", "parent");
-    const result = auth.loginParent(submittedEmail, password);
+    const result = auth.loginParent(email, password);
 
     if (!result.ok) {
-      const message = result.error ?? "No mock parent account found. Sign up first or use demo parent.";
-      setErrorMessage(message);
-      Alert.alert("Account not found", message);
+      setMessage({ text: result.error ?? "Login failed.", tone: "error" });
       return;
     }
 
-    const destination = result.needsHousehold ? "/household" : "/parent";
-    console.log("destination route", destination);
-    router.replace(destination);
+    setMessage({ text: "Logged in.", tone: "success" });
+    router.replace(result.needsChild ? "/add-child" : "/parent");
   }
 
   function handleSignUp() {
-    try {
-      console.log("signup pressed");
-      if (!fullName.trim()) {
-        setErrorMessage("Enter your full name.");
-        Alert.alert("Name needed", "Enter your full name.");
-        return;
-      }
-
-      if (!validateParentCredentials()) {
-        return;
-      }
-
-      const submittedEmail = email.trim();
-      console.log("submitted email", submittedEmail);
-      console.log("selected role", "parent");
-      const result = auth.signUpParent({
-        email: submittedEmail,
-        fullName,
-        password
-      });
-
-      if (!result.ok) {
-        const message = result.error ?? "Signup failed in the mock auth flow.";
-        setErrorMessage(message);
-        Alert.alert("Signup failed", message);
-        return;
-      }
-
-      console.log("mock user created");
-      const destination = "/household";
-      console.log("destination route", destination);
-      router.replace(destination);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Something went wrong during mock signup.";
-      console.error("mock signup failed", error);
-      setErrorMessage(message);
-      Alert.alert("Signup failed", message);
+    if (!fullName.trim()) {
+      setMessage({ text: "Enter your full name.", tone: "error" });
+      return;
     }
+
+    if (!validateBase()) {
+      return;
+    }
+
+    const result = auth.signUpParent({ email, fullName, password });
+
+    if (!result.ok) {
+      setMessage({ text: result.error ?? "Signup failed.", tone: "error" });
+      return;
+    }
+
+    setMessage({ text: "Account created. Let's get your family set up.", tone: "success" });
+    console.log("destination route", "/onboarding");
+    router.replace("/onboarding");
   }
 
   function handleDemoParent() {
-    setErrorMessage(null);
     auth.continueDemoParent();
     router.replace("/parent");
   }
 
   function handleDemoChild() {
-    setErrorMessage(null);
     auth.continueDemoChild();
     router.replace("/child");
   }
@@ -112,19 +85,31 @@ export default function AuthScreen() {
   return (
     <Screen>
       <View style={styles.header}>
-        <AppText variant="title">Create your family space</AppText>
-        <AppText color={colors.inkMuted}>Parents sign up first, then create the household and child profiles.</AppText>
+        <AppText color={colors.primaryDark} variant="caption">
+          Bloom Family
+        </AppText>
+        <AppText variant="title">{mode === "login" ? "Welcome back" : "Create your parent account"}</AppText>
+        <AppText color={colors.inkMuted}>
+          Parents sign up first. Children are added as household profiles, so younger kids do not need email accounts.
+        </AppText>
+      </View>
+
+      <View style={styles.modeRow}>
+        <Button label="Login" onPress={() => setMode("login")} variant={mode === "login" ? "primary" : "secondary"} />
+        <Button label="Sign up" onPress={() => setMode("signup")} variant={mode === "signup" ? "primary" : "secondary"} />
       </View>
 
       <Card>
-        <TextInput
-          autoCapitalize="words"
-          onChangeText={setFullName}
-          placeholder="Parent full name"
-          placeholderTextColor={colors.inkMuted}
-          style={styles.input}
-          value={fullName}
-        />
+        {mode === "signup" ? (
+          <TextInput
+            autoCapitalize="words"
+            onChangeText={setFullName}
+            placeholder="Parent full name"
+            placeholderTextColor={colors.inkMuted}
+            style={styles.input}
+            value={fullName}
+          />
+        ) : null}
         <TextInput
           autoCapitalize="none"
           keyboardType="email-address"
@@ -143,16 +128,19 @@ export default function AuthScreen() {
           value={password}
         />
 
-        {errorMessage ? (
-          <View style={styles.errorBox}>
-            <AppText color={colors.danger} variant="caption">
-              {errorMessage}
+        {message ? (
+          <View style={[styles.messageBox, message.tone === "success" ? styles.successBox : styles.errorBox]}>
+            <AppText color={message.tone === "success" ? colors.success : colors.danger} variant="caption">
+              {message.text}
             </AppText>
           </View>
         ) : null}
 
-        <Button icon="person-add" label="Sign up as parent" onPress={handleSignUp} />
-        <Button icon="log-in" label="Login as parent" onPress={handleLogin} variant="secondary" />
+        {mode === "signup" ? (
+          <Button icon="person-add" label="Sign up" onPress={handleSignUp} />
+        ) : (
+          <Button icon="log-in" label="Login" onPress={handleLogin} />
+        )}
       </Card>
 
       <View style={styles.demoActions}>
@@ -169,13 +157,11 @@ const styles = StyleSheet.create({
   },
   errorBox: {
     backgroundColor: "#FFF1F1",
-    borderColor: colors.danger,
-    borderRadius: 8,
-    borderWidth: 1,
-    padding: spacing.md
+    borderColor: colors.danger
   },
   header: {
-    gap: spacing.sm
+    gap: spacing.sm,
+    paddingTop: spacing.lg
   },
   input: {
     backgroundColor: colors.surfaceMuted,
@@ -186,5 +172,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 48,
     paddingHorizontal: spacing.md
+  },
+  messageBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: spacing.md
+  },
+  modeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
+  },
+  successBox: {
+    backgroundColor: "#EAFBF2",
+    borderColor: colors.success
   }
 });

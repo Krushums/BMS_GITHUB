@@ -23,9 +23,13 @@ export default function RootLayout() {
               }}
             >
               <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="add-child/index" options={{ headerShown: false }} />
+              <Stack.Screen name="admin/index" options={{ headerShown: false }} />
               <Stack.Screen name="auth/index" options={{ headerShown: false }} />
               <Stack.Screen name="household/index" options={{ title: "Household" }} />
+              <Stack.Screen name="onboarding/index" options={{ headerShown: false }} />
               <Stack.Screen name="parent/index" options={{ title: "Parent dashboard" }} />
+              <Stack.Screen name="quick-start/index" options={{ headerShown: false }} />
               <Stack.Screen name="child/index" options={{ title: "My day" }} />
               <Stack.Screen name="tasks/index" options={{ title: "Tasks" }} />
               <Stack.Screen name="rewards/index" options={{ title: "Rewards" }} />

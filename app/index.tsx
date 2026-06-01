@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
 
+import { useMockAuth } from "@/features/auth/MockAuthContext";
 import { AppText } from "@/shared/components/AppText";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
@@ -8,6 +9,20 @@ import { Screen } from "@/shared/components/Screen";
 import { colors, spacing } from "@/shared/theme";
 
 export default function WelcomeScreen() {
+  const auth = useMockAuth();
+
+  function openDemoParent() {
+    console.log("view parent demo pressed");
+    auth.continueDemoParent();
+    router.replace("/parent");
+  }
+
+  function openDemoChild() {
+    console.log("view child demo pressed");
+    auth.continueDemoChild();
+    router.replace("/child");
+  }
+
   return (
     <Screen>
       <View style={styles.hero}>
@@ -28,9 +43,16 @@ export default function WelcomeScreen() {
       </Card>
 
       <View style={styles.actions}>
-        <Button icon="mail" label="Log in or sign up" onPress={() => router.push("/auth")} />
-        <Button icon="home" label="View parent demo" onPress={() => router.push("/parent")} variant="secondary" />
-        <Button icon="sparkles" label="View child demo" onPress={() => router.push("/child")} variant="secondary" />
+        <Button
+          icon="mail"
+          label="Log in or sign up"
+          onPress={() => {
+            console.log("auth entry pressed");
+            router.replace("/auth");
+          }}
+        />
+        <Button icon="home" label="View parent demo" onPress={openDemoParent} variant="secondary" />
+        <Button icon="sparkles" label="View child demo" onPress={openDemoChild} variant="secondary" />
       </View>
     </Screen>
   );
