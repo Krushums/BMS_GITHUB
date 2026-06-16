@@ -1,15 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
+import { useLocalSearchParams } from "expo-router";
 
-import { HomeworkItem, HomeworkStatus, PointsTransaction, Reward } from "@/domain";
+import { HomeworkItem, HomeworkStatus, PointsTransaction, Reward, RewardRequest, RewardRequestCategory } from "@/domain";
 import { DashboardHeader } from "@/features/dashboard/DashboardHeader";
 import { useMockAuth } from "@/features/auth/MockAuthContext";
 import { useGameplay } from "@/features/gameplay/GameplayContext";
 import { ProofSubmissionCard } from "@/features/tasks/ProofSubmissionCard";
 import { TaskCard } from "@/features/tasks/TaskCard";
+import { HighlightTarget, TourOverlay, TourStep } from "@/features/help/TourOverlay";
 import { AppText } from "@/shared/components/AppText";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
@@ -29,11 +31,62 @@ const childTabs: Array<{ icon: keyof typeof Ionicons.glyphMap; id: ChildTab; lab
   { icon: "sparkles", id: "activity", label: "Activity" }
 ];
 
+const childTourSteps: Array<TourStep<ChildTab>> = [
+  {
+    target: "today",
+    title: "Today's Quests",
+    text: "Complete quests to earn points."
+  },
+  {
+    target: "homework",
+    title: "Homework",
+    text: "Log homework, add proof and keep your streak alive."
+  },
+  {
+    target: "rewards",
+    title: "Rewards Shop",
+    text: "Spend points in the rewards shop."
+  },
+  {
+    target: "progress",
+    title: "Progress",
+    text: "Track your points, level and achievements here."
+  },
+  {
+    target: "activity",
+    title: "Activity",
+    text: "See a friendly log of points earned, rewards and adjustments."
+  }
+];
+
 export default function ChildDashboardScreen() {
   const gameplay = useGameplay();
   const auth = useMockAuth();
+  const params = useLocalSearchParams<{ tour?: string }>();
   const [activeTab, setActiveTab] = useState<ChildTab>("today");
+  const [tourIndex, setTourIndex] = useState(0);
+  const [tourVisible, setTourVisible] = useState(false);
   const profileName = auth.currentChild?.displayName ?? gameplay.state.child.displayName;
+  const activeTourStep = childTourSteps[tourIndex] ?? childTourSteps[0];
+
+  useEffect(() => {
+    if (params.tour === "child") {
+      setTourIndex(0);
+      setTourVisible(true);
+      setActiveTab("today");
+    }
+  }, [params.tour]);
+
+  useEffect(() => {
+    if (tourVisible && activeTourStep) {
+      setActiveTab(activeTourStep.target);
+    }
+  }, [activeTourStep, tourVisible]);
+
+  function finishTour() {
+    auth.completeTour("child");
+    setTourVisible(false);
+  }
 
   return (
     <Screen>
@@ -51,17 +104,18 @@ export default function ChildDashboardScreen() {
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
         {childTabs.map((tab) => (
-          <Button
-            icon={tab.icon}
-            key={tab.id}
-            label={tab.label}
-            onPress={() => {
-              console.log(`child tab pressed: ${tab.id}`);
-              setActiveTab(tab.id);
-            }}
-            style={styles.childTabButton}
-            variant={activeTab === tab.id ? "primary" : "secondary"}
-          />
+          <HighlightTarget active={tourVisible && activeTourStep?.target === tab.id} key={tab.id}>
+            <Button
+              icon={tab.icon}
+              label={tab.label}
+              onPress={() => {
+                console.log(`child tab pressed: ${tab.id}`);
+                setActiveTab(tab.id);
+              }}
+              style={styles.childTabButton}
+              variant={activeTab === tab.id ? "primary" : "secondary"}
+            />
+          </HighlightTarget>
         ))}
       </ScrollView>
 
@@ -70,6 +124,15 @@ export default function ChildDashboardScreen() {
       {activeTab === "rewards" ? <RewardsTab gameplay={gameplay} /> : null}
       {activeTab === "progress" ? <ProgressTab gameplay={gameplay} /> : null}
       {activeTab === "activity" ? <ActivityTab gameplay={gameplay} /> : null}
+      <TourOverlay
+        currentIndex={tourIndex}
+        onBack={() => setTourIndex((value) => Math.max(0, value - 1))}
+        onFinish={finishTour}
+        onNext={() => setTourIndex((value) => Math.min(childTourSteps.length - 1, value + 1))}
+        onSkip={finishTour}
+        steps={childTourSteps}
+        visible={tourVisible}
+      />
     </Screen>
   );
 }
@@ -985,6 +1048,9 @@ function RewardsTab({ gameplay }: { gameplay: Gameplay }) {
         </View>
       </View>
 
+      <RewardRequestPanel gameplay={gameplay} shop={shop} />
+      <RewardGoalsSection gameplay={gameplay} shop={shop} />
+
       <RewardTierSection
         description="Small instant wins for everyday momentum."
         gameplay={gameplay}
@@ -1005,6 +1071,157 @@ function RewardsTab({ gameplay }: { gameplay: Gameplay }) {
         rewards={shop.bigRewards}
         shop={shop}
         title="Big Unlocks"
+      />
+    </View>
+  );
+}
+
+const rewardRequestCategories: RewardRequestCategory[] = ["experience", "privilege", "item", "money", "custom"];
+
+function RewardRequestPanel({ gameplay, shop }: { gameplay: Gameplay; shop: RewardShopState }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<RewardRequestCategory>("experience");
+  const childRequests = gameplay.state.rewardRequests.filter((request) => request.childId === gameplay.state.child.childId);
+  const pendingRequests = childRequests.filter((request) => request.status === "pending_parent_review");
+  const deniedRequests = childRequests.filter((request) => request.status === "denied").slice(0, 2);
+
+  function submitRequest() {
+    if (!title.trim() || !description.trim()) {
+      return;
+    }
+
+    gameplay.createRewardRequest({
+      category,
+      description,
+      title
+    });
+    setTitle("");
+    setDescription("");
+    setCategory("experience");
+    setIsOpen(false);
+  }
+
+  return (
+    <Card tone="focus">
+      <View style={styles.rewardCardTop}>
+        <View style={styles.rewardCopy}>
+          <AppText variant="heading">Set a goal</AppText>
+          <AppText color={colors.inkMuted}>Ask for a meaningful reward and work toward it once approved.</AppText>
+        </View>
+        <Button icon={isOpen ? "close" : "add"} label={isOpen ? "Close" : "Request a reward"} onPress={() => setIsOpen((value) => !value)} variant="secondary" />
+      </View>
+
+      {isOpen ? (
+        <View style={styles.goalRequestForm}>
+          <TextInput onChangeText={setTitle} placeholder="Reward title" placeholderTextColor={colors.inkMuted} style={styles.homeworkInput} value={title} />
+          <TextInput
+            multiline
+            onChangeText={setDescription}
+            placeholder="Why do you want it?"
+            placeholderTextColor={colors.inkMuted}
+            style={[styles.homeworkInput, styles.homeworkNotesInput]}
+            value={description}
+          />
+          <View style={styles.filterRow}>
+            {rewardRequestCategories.map((item) => (
+              <Pressable
+                accessibilityRole="button"
+                key={item}
+                onPress={() => setCategory(item)}
+                style={[styles.goalCategoryChip, category === item && styles.goalCategoryChipActive]}
+              >
+                <AppText color={category === item ? colors.surface : colors.ink} variant="caption">
+                  {formatGoalCategory(item)}
+                </AppText>
+              </Pressable>
+            ))}
+          </View>
+          <Button disabled={!title.trim() || !description.trim()} icon="send" label="Send for parent review" onPress={submitRequest} />
+        </View>
+      ) : null}
+
+      {pendingRequests.map((request) => (
+        <View key={request.id} style={styles.goalStatusCard}>
+          <Ionicons color={colors.accent} name="hourglass" size={18} />
+          <View style={styles.rewardCopy}>
+            <AppText variant="caption">{request.title}</AppText>
+            <AppText color={colors.inkMuted} variant="caption">Waiting for parent approval</AppText>
+          </View>
+        </View>
+      ))}
+
+      {deniedRequests.map((request) => (
+        <View key={request.id} style={styles.goalStatusCard}>
+          <Ionicons color={colors.danger} name="close-circle" size={18} />
+          <View style={styles.rewardCopy}>
+            <AppText variant="caption">{request.title}</AppText>
+            <AppText color={colors.inkMuted} variant="caption">
+              Request not approved{request.parentNote ? ` · ${request.parentNote}` : ""}
+            </AppText>
+          </View>
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+function RewardGoalsSection({ gameplay, shop }: { gameplay: Gameplay; shop: RewardShopState }) {
+  const goals = gameplay.approvedRewardGoals.filter((request) => request.childId === gameplay.state.child.childId);
+
+  if (goals.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.rewardTier}>
+      <View>
+        <AppText variant="heading">Goals</AppText>
+        <AppText color={colors.inkMuted}>Approved rewards you can work toward.</AppText>
+      </View>
+      <View style={styles.rewardGrid}>
+        {goals.map((goal) => (
+          <RewardGoalCard gameplay={gameplay} goal={goal} key={goal.id} shop={shop} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function RewardGoalCard({ gameplay, goal, shop }: { gameplay: Gameplay; goal: RewardRequest; shop: RewardShopState }) {
+  const target = goal.parentPointTarget ?? goal.suggestedPointTarget ?? 0;
+  const progressPercent = target > 0 ? Math.min(100, Math.round((shop.availablePoints / target) * 100)) : 0;
+  const remaining = Math.max(0, target - shop.availablePoints);
+  const canRedeem = goal.status === "approved_goal" && target > 0 && shop.availablePoints >= target;
+
+  return (
+    <View style={[styles.shopRewardCard, styles.shopRewardCardBig, goal.status === "redeemed" && styles.shopRewardCardLocked]}>
+      <View style={styles.rewardCardTop}>
+        <View style={[styles.rewardGem, styles.rewardGemBig]}>
+          <Ionicons color={colors.accent} name={goal.status === "redeemed" ? "checkmark-circle" : "flag"} size={24} />
+        </View>
+        <View style={styles.rewardStatusPill}>
+          <AppText color={colors.primaryDark} variant="caption">{goal.status === "redeemed" ? "Redeemed" : "Goal approved"}</AppText>
+        </View>
+      </View>
+      <AppText variant="body">{goal.title}</AppText>
+      <AppText color={colors.inkMuted} variant="caption">{goal.description}</AppText>
+      <View style={styles.rewardProgressTrack}>
+        <View style={[styles.rewardProgressFill, { width: `${progressPercent}%` }]} />
+      </View>
+      <AppText color={colors.inkMuted} variant="caption">
+        Target {target} pts · Current {shop.availablePoints} pts · {remaining} pts to go
+      </AppText>
+      {goal.deadlineDate ? <AppText color={colors.inkMuted} variant="caption">Deadline: {formatDateTimeLabel(goal.deadlineDate)}</AppText> : null}
+      {goal.eventDate ? <AppText color={colors.inkMuted} variant="caption">Event date: {formatDateTimeLabel(goal.eventDate)}</AppText> : null}
+      {goal.conditions ? <AppText color={colors.inkMuted} variant="caption">Conditions: {goal.conditions}</AppText> : null}
+      <Button
+        disabled={!canRedeem}
+        icon={goal.status === "redeemed" ? "checkmark-circle" : canRedeem ? "sparkles" : "trending-up"}
+        label={goal.status === "redeemed" ? "Goal redeemed" : canRedeem ? "Redeem goal" : "Keep saving"}
+        onPress={() => gameplay.redeemRewardGoal(goal.id)}
+        variant={canRedeem ? "primary" : "secondary"}
       />
     </View>
   );
@@ -1371,6 +1588,14 @@ function getRewardTypeLabel(reward: Reward) {
   return "Big unlock";
 }
 
+function formatGoalCategory(category: RewardRequestCategory) {
+  if (category === "experience") return "Experience";
+  if (category === "privilege") return "Privilege";
+  if (category === "item") return "Item";
+  if (category === "money") return "Money";
+  return "Custom";
+}
+
 function getLimitLabel(reward: Reward) {
   if (reward.limit === "once_per_day") return "1 per day";
   if (reward.limit === "once_per_week") return "1 per week";
@@ -1577,6 +1802,35 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm
+  },
+  formFlex: {
+    flexBasis: 160,
+    flexGrow: 1
+  },
+  goalCategoryChip: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  goalCategoryChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primaryDark
+  },
+  goalRequestForm: {
+    gap: spacing.md
+  },
+  goalStatusCard: {
+    alignItems: "flex-start",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md
   },
   homeworkFormRow: {
     flexDirection: "row",

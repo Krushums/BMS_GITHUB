@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams } from "expo-router";
 
 import { DashboardHeader } from "@/features/dashboard/DashboardHeader";
 import { useMockAuth } from "@/features/auth/MockAuthContext";
 import { useGameplay } from "@/features/gameplay/GameplayContext";
-import { HomeworkItem, PointsTransaction } from "@/domain";
+import { HomeworkItem, PointsTransaction, RewardRequest } from "@/domain";
 import { RewardCard } from "@/features/rewards/RewardCard";
 import { SubmissionCard } from "@/features/submissions/SubmissionCard";
 import { AppText } from "@/shared/components/AppText";
@@ -14,6 +15,7 @@ import { Card } from "@/shared/components/Card";
 import { Screen } from "@/shared/components/Screen";
 import { ProfileMenu } from "@/shared/components/ProfileMenu";
 import { SummaryBar, SummaryCardItem } from "@/shared/components/SummaryBar";
+import { HighlightTarget, TourOverlay, TourStep } from "@/features/help/TourOverlay";
 import { colors, spacing } from "@/shared/theme";
 import { addDays, addWeeks, formatDateLabel, formatDateTimeLabel, formatWeekRange, getStartOfWeek } from "@/shared/utils/date";
 
@@ -28,6 +30,44 @@ const tabs: Array<{ id: ParentTab; label: string }> = [
   { id: "review", label: "Review" },
   { id: "history", label: "History" },
   { id: "analytics", label: "Analytics" }
+];
+
+const parentTourSteps: Array<TourStep<ParentTab>> = [
+  {
+    target: "dashboard",
+    title: "Dashboard",
+    text: "This is your dashboard. Here you'll see approvals, activity and household progress."
+  },
+  {
+    target: "tasks",
+    title: "Tasks",
+    text: "Create chores, routines and responsibilities. Assign points and due dates."
+  },
+  {
+    target: "behaviour",
+    title: "Behaviour",
+    text: "Quickly reward positive behaviour or apply behaviour adjustments."
+  },
+  {
+    target: "homework",
+    title: "Homework",
+    text: "Track homework consistency, review evidence and monitor academic habits."
+  },
+  {
+    target: "rewards",
+    title: "Rewards",
+    text: "Create rewards your child can unlock using points."
+  },
+  {
+    target: "review",
+    title: "Review",
+    text: "Approve homework evidence, task submissions and reward requests."
+  },
+  {
+    target: "history",
+    title: "History",
+    text: "View points history and progress over time."
+  }
 ];
 
 const negativeAdjustments = [
@@ -61,41 +101,82 @@ const defaultBehaviourPreset: BehaviourPreset = positiveAdjustments[0] ?? {
 export default function ParentDashboardScreen() {
   const gameplay = useGameplay();
   const auth = useMockAuth();
+  const params = useLocalSearchParams<{ tour?: string }>();
   const [activeTab, setActiveTab] = useState<ParentTab>("dashboard");
+  const [tourIndex, setTourIndex] = useState(0);
+  const [tourVisible, setTourVisible] = useState(false);
   const profileName = auth.currentParent?.fullName ?? "Parent";
+  const activeTourStep = parentTourSteps[tourIndex] ?? parentTourSteps[0];
+
+  useEffect(() => {
+    if (params.tour === "parent") {
+      setTourIndex(0);
+      setTourVisible(true);
+      setActiveTab("dashboard");
+    }
+  }, [params.tour]);
+
+  useEffect(() => {
+    if (tourVisible && activeTourStep) {
+      setActiveTab(activeTourStep.target);
+    }
+  }, [activeTourStep, tourVisible]);
+
+  function finishTour() {
+    auth.completeTour("parent");
+    setTourVisible(false);
+  }
 
   return (
     <Screen>
-      <View style={styles.headerRow}>
-        <View style={styles.headerContent}>
-          <DashboardHeader greeting="Family pulse" points={gameplay.state.child.points} streak={gameplay.state.child.streak} />
+      <ParentPageLayout>
+        <View style={styles.headerRow}>
+          <View style={styles.headerContent}>
+            <DashboardHeader greeting="Family pulse" points={gameplay.state.child.points} streak={gameplay.state.child.streak} />
+          </View>
+          <ProfileMenu displayName={profileName} />
         </View>
-        <ProfileMenu displayName={profileName} />
-      </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
-        {tabs.map((tab) => (
-          <Button
-            key={tab.id}
-            label={tab.label}
-            onPress={() => setActiveTab(tab.id)}
-            variant={activeTab === tab.id ? "primary" : "secondary"}
-          />
-        ))}
-      </ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow} style={styles.tabScroller}>
+          {tabs.map((tab) => (
+            <HighlightTarget active={tourVisible && activeTourStep?.target === tab.id} key={tab.id}>
+              <Button
+                label={tab.label}
+                onPress={() => setActiveTab(tab.id)}
+                variant={activeTab === tab.id ? "primary" : "secondary"}
+              />
+            </HighlightTarget>
+          ))}
+        </ScrollView>
 
-      {activeTab === "dashboard" ? <DashboardTab gameplay={gameplay} setActiveTab={setActiveTab} /> : null}
-      {activeTab === "tasks" ? <TasksTab gameplay={gameplay} /> : null}
-      {activeTab === "homework" ? <HomeworkTab gameplay={gameplay} /> : null}
-      {activeTab === "behaviour" ? <BehaviourTab gameplay={gameplay} /> : null}
-      {activeTab === "rewards" ? <RewardsTab gameplay={gameplay} /> : null}
-      {activeTab === "review" ? <ReviewTab gameplay={gameplay} /> : null}
-      {activeTab === "history" ? <HistoryTab gameplay={gameplay} /> : null}
-      {activeTab === "analytics" ? <AnalyticsTab gameplay={gameplay} /> : null}
+        <View style={styles.parentTabPanel}>
+          {activeTab === "dashboard" ? <DashboardTab gameplay={gameplay} setActiveTab={setActiveTab} /> : null}
+          {activeTab === "tasks" ? <TasksTab gameplay={gameplay} /> : null}
+          {activeTab === "homework" ? <HomeworkTab gameplay={gameplay} /> : null}
+          {activeTab === "behaviour" ? <BehaviourTab gameplay={gameplay} /> : null}
+          {activeTab === "rewards" ? <RewardsTab gameplay={gameplay} /> : null}
+          {activeTab === "review" ? <ReviewTab gameplay={gameplay} /> : null}
+          {activeTab === "history" ? <HistoryTab gameplay={gameplay} /> : null}
+          {activeTab === "analytics" ? <AnalyticsTab gameplay={gameplay} /> : null}
+        </View>
+        <TourOverlay
+          currentIndex={tourIndex}
+          onBack={() => setTourIndex((value) => Math.max(0, value - 1))}
+          onFinish={finishTour}
+          onNext={() => setTourIndex((value) => Math.min(parentTourSteps.length - 1, value + 1))}
+          onSkip={finishTour}
+          steps={parentTourSteps}
+          visible={tourVisible}
+        />
+      </ParentPageLayout>
     </Screen>
   );
 }
 
 type Gameplay = ReturnType<typeof useGameplay>;
+
+function ParentPageLayout({ children }: { children: ReactNode }) {
+  return <View style={styles.parentPageLayout}>{children}</View>;
+}
 
 function DashboardTab({ gameplay, setActiveTab }: { gameplay: Gameplay; setActiveTab: (tab: ParentTab) => void }) {
   const completedToday = gameplay.todayTasks.filter(({ assignment }) => assignment.status === "approved").length;
@@ -106,12 +187,12 @@ function DashboardTab({ gameplay, setActiveTab }: { gameplay: Gameplay; setActiv
       <SummaryBar items={getParentSummaryItems(gameplay)} />
 
       <View style={styles.grid}>
-        <Card tone="fresh">
+        <Card style={styles.parentGridCard} tone="fresh">
           <AppText variant="heading">{completedToday}/{gameplay.todayTasks.length}</AppText>
           <AppText color={colors.inkMuted} variant="caption">Tasks approved today</AppText>
         </Card>
-        <Card tone="warm">
-          <AppText variant="heading">{gameplay.pendingSubmissions.length + gameplay.rewardRequests.length}</AppText>
+        <Card style={styles.parentGridCard} tone="warm">
+          <AppText variant="heading">{gameplay.pendingSubmissions.length + gameplay.rewardRequests.length + gameplay.pendingRewardGoalRequests.length}</AppText>
           <AppText color={colors.inkMuted} variant="caption">Pending reviews</AppText>
         </Card>
       </View>
@@ -132,7 +213,7 @@ function DashboardTab({ gameplay, setActiveTab }: { gameplay: Gameplay; setActiv
 }
 
 function PriorityAlerts({ gameplay, setActiveTab }: { gameplay: Gameplay; setActiveTab: (tab: ParentTab) => void }) {
-  const hasAlerts = gameplay.rewardRequests.length > 0 || gameplay.pendingSubmissions.length > 0;
+  const hasAlerts = gameplay.rewardRequests.length > 0 || gameplay.pendingSubmissions.length > 0 || gameplay.pendingRewardGoalRequests.length > 0;
 
   if (!hasAlerts) {
     return null;
@@ -140,6 +221,10 @@ function PriorityAlerts({ gameplay, setActiveTab }: { gameplay: Gameplay; setAct
 
   return (
     <View style={styles.alertStack}>
+      {gameplay.pendingRewardGoalRequests.map((request) => (
+        <ParentRewardRequestReviewCard compact gameplay={gameplay} key={request.id} request={request} />
+      ))}
+
       {gameplay.rewardRequests.map(({ redemption, reward }) => (
         <Card key={redemption.id} style={styles.priorityAlert} tone="warm">
           <View style={styles.alertHeader}>
@@ -181,6 +266,79 @@ function PriorityAlerts({ gameplay, setActiveTab }: { gameplay: Gameplay; setAct
         </Card>
       ) : null}
     </View>
+  );
+}
+
+function ParentRewardRequestReviewCard({ compact = false, gameplay, request }: { compact?: boolean; gameplay: Gameplay; request: RewardRequest }) {
+  const [target, setTarget] = useState(String(request.suggestedPointTarget ?? 100));
+  const [conditions, setConditions] = useState("");
+  const [deadlineDate, setDeadlineDate] = useState(request.eventDate ?? "");
+  const [parentNote, setParentNote] = useState("");
+
+  function approve() {
+    const parentPointTarget = Number(target);
+
+    if (!Number.isFinite(parentPointTarget) || parentPointTarget <= 0) {
+      Alert.alert("Set a target", "Add the points needed for this goal.");
+      return;
+    }
+
+    gameplay.reviewRewardRequest({
+      conditions,
+      deadlineDate,
+      decision: "approved",
+      parentNote,
+      parentPointTarget,
+      requestId: request.id
+    });
+  }
+
+  function deny() {
+    gameplay.reviewRewardRequest({
+      decision: "denied",
+      parentNote: parentNote || "Not right now.",
+      requestId: request.id
+    });
+  }
+
+  return (
+    <Card style={styles.priorityAlert} tone="warm">
+      <View style={styles.alertHeader}>
+        <View style={styles.alertIcon}>
+          <Ionicons color={colors.accent} name="flag" size={22} />
+        </View>
+        <View style={styles.alertCopy}>
+          <AppText variant="body">New reward request from {gameplay.state.child.displayName}</AppText>
+          <AppText color={colors.inkMuted} variant="caption">
+            {request.title} · {request.description}
+          </AppText>
+          {request.eventDate ? (
+            <AppText color={colors.inkMuted} variant="caption">
+              Event date: {formatDateLabel(request.eventDate)}
+            </AppText>
+          ) : null}
+        </View>
+      </View>
+
+      {!compact ? (
+        <View style={styles.formGroup}>
+          <TextInput keyboardType="number-pad" onChangeText={setTarget} placeholder="Required points" placeholderTextColor={colors.inkMuted} style={styles.input} value={target} />
+          <TextInput onChangeText={setDeadlineDate} placeholder="Deadline / event date optional" placeholderTextColor={colors.inkMuted} style={styles.input} value={deadlineDate} />
+          <TextInput multiline onChangeText={setConditions} placeholder="Conditions optional" placeholderTextColor={colors.inkMuted} style={[styles.input, styles.noteInput]} value={conditions} />
+          <TextInput multiline onChangeText={setParentNote} placeholder="Parent note optional" placeholderTextColor={colors.inkMuted} style={[styles.input, styles.noteInput]} value={parentNote} />
+        </View>
+      ) : (
+        <View style={styles.formGroup}>
+          <TextInput keyboardType="number-pad" onChangeText={setTarget} placeholder="Required points" placeholderTextColor={colors.inkMuted} style={styles.input} value={target} />
+          <TextInput onChangeText={setParentNote} placeholder="Optional note" placeholderTextColor={colors.inkMuted} style={styles.input} value={parentNote} />
+        </View>
+      )}
+
+      <View style={styles.actions}>
+        <Button label="Deny" onPress={deny} variant="quiet" />
+        <Button icon="checkmark" label="Approve goal" onPress={approve} />
+      </View>
+    </Card>
   );
 }
 
@@ -999,6 +1157,22 @@ function RewardsTab({ gameplay }: { gameplay: Gameplay }) {
       </Card>
       <AppText variant="heading">Active reward shop</AppText>
       {gameplay.state.rewards.map((reward) => <RewardCard key={reward.id} reward={reward} />)}
+      <AppText variant="heading">Child goal requests</AppText>
+      {gameplay.pendingRewardGoalRequests.length === 0 ? <Card><AppText color={colors.inkMuted}>No new child reward goals waiting for review.</AppText></Card> : null}
+      {gameplay.pendingRewardGoalRequests.map((request) => (
+        <ParentRewardRequestReviewCard gameplay={gameplay} key={request.id} request={request} />
+      ))}
+      <AppText variant="heading">Approved goals</AppText>
+      {gameplay.approvedRewardGoals.length === 0 ? <Card><AppText color={colors.inkMuted}>No approved goals yet.</AppText></Card> : null}
+      {gameplay.approvedRewardGoals.map((goal) => (
+        <Card key={goal.id} tone="focus">
+          <AppText variant="body">{goal.title}</AppText>
+          <AppText color={colors.inkMuted} variant="caption">
+            Target {goal.parentPointTarget ?? goal.suggestedPointTarget ?? 0} pts · {goal.status === "redeemed" ? "Redeemed" : "In progress"}
+          </AppText>
+          {goal.conditions ? <AppText color={colors.inkMuted} variant="caption">Conditions: {goal.conditions}</AppText> : null}
+        </Card>
+      ))}
       <AppText variant="heading">Pending redemptions</AppText>
       {gameplay.rewardRequests.length === 0 ? <Card><AppText color={colors.inkMuted}>No reward requests right now.</AppText></Card> : null}
       {gameplay.rewardRequests.map(({ redemption, reward }) => (
@@ -1596,6 +1770,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm
   },
   grid: {
+    alignItems: "stretch",
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm
@@ -1608,7 +1783,8 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.md,
-    justifyContent: "space-between"
+    justifyContent: "space-between",
+    width: "100%"
   },
   cardText: {
     flex: 1,
@@ -1738,6 +1914,22 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     textAlignVertical: "top"
   },
+  parentPageLayout: {
+    alignSelf: "center",
+    gap: spacing.lg,
+    maxWidth: 1180,
+    width: "100%"
+  },
+  parentGridCard: {
+    flexBasis: 260,
+    flexGrow: 1,
+    minWidth: 0
+  },
+  parentTabPanel: {
+    alignItems: "stretch",
+    gap: spacing.lg,
+    width: "100%"
+  },
   positivePreset: {
     backgroundColor: "#F4FFFA"
   },
@@ -1818,5 +2010,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     paddingRight: spacing.md
+  },
+  tabScroller: {
+    width: "100%"
   }
 });

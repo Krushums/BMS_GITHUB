@@ -26,6 +26,7 @@ export default function RootLayout() {
               <Stack.Screen name="add-child/index" options={{ headerShown: false }} />
               <Stack.Screen name="admin/index" options={{ headerShown: false }} />
               <Stack.Screen name="auth/index" options={{ headerShown: false }} />
+              <Stack.Screen name="help-demo/index" options={{ title: "Help & Demo" }} />
               <Stack.Screen name="household/index" options={{ title: "Household" }} />
               <Stack.Screen name="onboarding/index" options={{ headerShown: false }} />
               <Stack.Screen name="parent/index" options={{ title: "Parent dashboard" }} />

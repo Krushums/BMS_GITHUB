@@ -66,11 +66,16 @@ type AuthState = {
   currentParent: ParentUser | null;
   households: Household[];
   parents: MockParentAccount[];
+  tourCompleted: {
+    child: boolean;
+    parent: boolean;
+  };
 };
 
 type AuthContextValue = AuthState & {
   adminLogin: (email: string, password: string) => AuthResult;
   completeOnboarding: () => void;
+  completeTour: (tour: "child" | "parent") => void;
   continueDemoChild: () => void;
   continueDemoParent: () => void;
   createChildProfile: (input: CreateChildInput) => AuthResult;
@@ -88,6 +93,7 @@ type AuthContextValue = AuthState & {
 type AuthAction =
   | { type: "adminLogin"; admin: MockAdminAccount }
   | { type: "completeOnboarding" }
+  | { type: "completeTour"; tour: "child" | "parent" }
   | { type: "continueDemoChild" }
   | { type: "continueDemoParent" }
   | { type: "createChildProfile"; childProfile: MockChildProfile; household: Household }
@@ -161,7 +167,11 @@ const initialState: AuthState = {
   currentChild: null,
   currentParent: null,
   households: [DEMO_HOUSEHOLD],
-  parents: [DEMO_PARENT]
+  parents: [DEMO_PARENT],
+  tourCompleted: {
+    child: false,
+    parent: false
+  }
 };
 
 export function MockAuthProvider({ children }: PropsWithChildren) {
@@ -227,6 +237,7 @@ export function MockAuthProvider({ children }: PropsWithChildren) {
         return { ok: true };
       },
       completeOnboarding: () => dispatch({ type: "completeOnboarding" }),
+      completeTour: (tour) => dispatch({ tour, type: "completeTour" }),
       continueDemoChild: () => {
         console.log("demo child selected", DEMO_CHILD.username);
         dispatch({ type: "continueDemoChild" });
@@ -414,6 +425,15 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
         )
       };
 
+    case "completeTour":
+      return {
+        ...state,
+        tourCompleted: {
+          ...state.tourCompleted,
+          [action.tour]: true
+        }
+      };
+
     case "continueDemoChild":
       return {
         ...state,
@@ -573,7 +593,8 @@ function mergeWithDemoState(state: AuthState): AuthState {
     activityLog: state.activityLog?.length ? state.activityLog : initialState.activityLog,
     childProfiles,
     households,
-    parents
+    parents,
+    tourCompleted: state.tourCompleted ?? initialState.tourCompleted
   };
 }
 

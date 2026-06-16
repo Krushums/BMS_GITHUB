@@ -28,22 +28,26 @@ export function SummaryBar({ items, style }: SummaryBarProps) {
       {items.map((item) => (
         <View key={item.label} style={styles.card}>
           <View style={styles.labelRow}>
-            {item.icon ? <Ionicons color={item.accentColor ?? colors.primary} name={item.icon} size={18} /> : null}
-            <AppText color={colors.inkMuted} variant="caption">
+            {item.icon ? (
+              <View style={styles.iconSlot}>
+                <Ionicons color={item.accentColor ?? colors.primary} name={item.icon} size={18} />
+              </View>
+            ) : null}
+            <AppText color={colors.inkMuted} numberOfLines={1} style={styles.labelText} variant="caption">
               {item.label}
             </AppText>
           </View>
-          <AppText color={item.accentColor ?? colors.ink} variant="heading">
+          <AppText color={item.accentColor ?? colors.ink} numberOfLines={1} style={styles.valueText} variant="heading">
             {item.value}
           </AppText>
           {item.details ? (
             <View style={styles.detailsRow}>
               {item.details.map((detail) => (
                 <View key={detail.label} style={styles.detailItem}>
-                  <AppText color={detail.color ?? colors.ink} variant="body">
+                  <AppText color={detail.color ?? colors.ink} numberOfLines={1} style={styles.detailValue} variant="body">
                     {detail.value}
                   </AppText>
-                  <AppText color={colors.inkMuted} variant="caption">
+                  <AppText color={colors.inkMuted} numberOfLines={1} style={styles.detailLabel} variant="caption">
                     {detail.label}
                   </AppText>
                 </View>
@@ -51,7 +55,7 @@ export function SummaryBar({ items, style }: SummaryBarProps) {
             </View>
           ) : null}
           {item.caption ? (
-            <AppText color={item.accentColor ?? colors.inkMuted} variant="caption">
+            <AppText color={item.accentColor ?? colors.inkMuted} numberOfLines={1} style={styles.captionText} variant="caption">
               {item.caption}
             </AppText>
           ) : null}
@@ -67,31 +71,64 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
-    flexBasis: 160,
+    flexBasis: 148,
     flexGrow: 1,
+    flexShrink: 1,
     gap: spacing.sm,
-    minHeight: 118,
-    minWidth: 140,
-    padding: spacing.lg
+    justifyContent: "space-between",
+    minHeight: 112,
+    minWidth: 0,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md
+  },
+  captionText: {
+    minHeight: 16
   },
   container: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.md
+    gap: spacing.sm
+  },
+  detailLabel: {
+    fontSize: 11,
+    lineHeight: 14,
+    textAlign: "center"
   },
   detailsRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.md
+    flexWrap: "nowrap",
+    gap: spacing.xs
   },
   detailItem: {
-    flexBasis: 64,
     flexGrow: 1,
+    flexShrink: 1,
     minWidth: 0
+  },
+  detailValue: {
+    fontSize: 18,
+    lineHeight: 22,
+    textAlign: "center"
+  },
+  iconSlot: {
+    alignItems: "center",
+    flexShrink: 0,
+    height: 22,
+    justifyContent: "center",
+    width: 22
   },
   labelRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: spacing.sm
+    gap: spacing.xs,
+    minHeight: 22,
+    minWidth: 0
+  },
+  labelText: {
+    flex: 1,
+    minWidth: 0
+  },
+  valueText: {
+    lineHeight: 28,
+    minHeight: 28
   }
 });

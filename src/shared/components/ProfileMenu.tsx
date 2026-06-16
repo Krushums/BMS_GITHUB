@@ -11,7 +11,12 @@ type ProfileMenuProps = {
   displayName: string;
 };
 
-const menuItems = ["Profile", "Settings", "Notifications", "Help"];
+const menuItems: Array<{ label: string; route?: "/profile" | "/help-demo" }> = [
+  { label: "Profile", route: "/profile" },
+  { label: "Settings" },
+  { label: "Notifications" },
+  { label: "Help & Demo", route: "/help-demo" }
+];
 
 export function ProfileMenu({ displayName }: ProfileMenuProps) {
   const auth = useMockAuth();
@@ -42,8 +47,17 @@ export function ProfileMenu({ displayName }: ProfileMenuProps) {
           <Pressable accessibilityRole="button" onPress={() => setIsOpen(false)} style={styles.backdrop} />
           <View style={styles.menu}>
             {menuItems.map((item) => (
-              <Pressable key={item} onPress={() => setIsOpen(false)} style={styles.menuItem}>
-                <AppText variant="caption">{item}</AppText>
+              <Pressable
+                key={item.label}
+                onPress={() => {
+                  setIsOpen(false);
+                  if (item.route) {
+                    router.push(item.route);
+                  }
+                }}
+                style={styles.menuItem}
+              >
+                <AppText variant="caption">{item.label}</AppText>
               </Pressable>
             ))}
             <Pressable onPress={handleLogout} style={[styles.menuItem, styles.logoutItem]}>

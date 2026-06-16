@@ -32,7 +32,7 @@ export function PreviewModeShell({ children }: PropsWithChildren) {
       ) : null}
       <Pressable accessibilityRole="button" onPress={toggleMode} style={styles.toggle}>
         <Ionicons color={colors.surface} name={isPhone ? "phone-portrait" : "laptop"} size={16} />
-        <Text style={styles.toggleText}>{isPhone ? "Phone view" : "Laptop view"}</Text>
+        <Text style={styles.toggleText}>{isPhone ? "Laptop view" : "Phone view"}</Text>
       </Pressable>
     </View>
   );

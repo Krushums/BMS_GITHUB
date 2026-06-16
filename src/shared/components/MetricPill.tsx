@@ -13,10 +13,14 @@ type MetricPillProps = {
 export function MetricPill({ icon, label, value }: MetricPillProps) {
   return (
     <View style={styles.container}>
-      <Ionicons color={colors.primaryDark} name={icon} size={18} />
+      <View style={styles.iconSlot}>
+        <Ionicons color={colors.primaryDark} name={icon} size={18} />
+      </View>
       <View style={styles.copy}>
-        <AppText variant="caption">{value}</AppText>
-        <AppText color={colors.inkMuted} style={styles.label} variant="caption">
+        <AppText numberOfLines={1} style={styles.value} variant="caption">
+          {value}
+        </AppText>
+        <AppText color={colors.inkMuted} numberOfLines={1} style={styles.label} variant="caption">
           {label}
         </AppText>
       </View>
@@ -32,9 +36,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
+    flexBasis: 128,
     flexGrow: 1,
     flexShrink: 1,
     gap: spacing.sm,
+    minHeight: 52,
     minWidth: 0,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm
@@ -43,7 +49,19 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     minWidth: 0
   },
+  iconSlot: {
+    alignItems: "center",
+    flexShrink: 0,
+    height: 24,
+    justifyContent: "center",
+    width: 24
+  },
   label: {
-    fontSize: 12
+    fontSize: 12,
+    lineHeight: 15
+  },
+  value: {
+    lineHeight: 17,
+    minHeight: 17
   }
 });

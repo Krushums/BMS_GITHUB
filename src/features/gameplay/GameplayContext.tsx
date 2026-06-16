@@ -8,6 +8,8 @@ import {
   HomeworkStatus,
   PointsTransaction,
   Reward,
+  RewardRequest,
+  RewardRequestCategory,
   RewardRedemption,
   Task,
   TaskAssignment
@@ -32,6 +34,7 @@ type GameplayState = {
   submissions: EvidenceSubmission[];
   pointsTransactions: PointsTransaction[];
   rewards: Reward[];
+  rewardRequests: RewardRequest[];
   redemptions: RewardRedemption[];
   child: ChildProgress;
   morningRoutineCompletions: MorningRoutineCompletion[];
@@ -83,6 +86,23 @@ type CreateRewardInput = {
   title: string;
   description?: string;
   pointCost: number;
+};
+
+type CreateRewardRequestInput = {
+  title: string;
+  description: string;
+  category: RewardRequestCategory;
+  suggestedPointTarget?: number | null;
+  eventDate?: string | null;
+};
+
+type ReviewRewardRequestInput = {
+  requestId: string;
+  decision: "approved" | "denied";
+  parentPointTarget?: number | null;
+  deadlineDate?: string | null;
+  conditions?: string | null;
+  parentNote?: string | null;
 };
 
 type BehaviourAdjustmentInput = {
@@ -153,6 +173,8 @@ type GameplayContextValue = {
   morningRoutine: MorningRoutineState;
   pendingSubmissions: Array<{ assignment: TaskAssignment; submission: EvidenceSubmission; task: Task }>;
   rewardRequests: Array<{ redemption: RewardRedemption; reward: Reward }>;
+  pendingRewardGoalRequests: RewardRequest[];
+  approvedRewardGoals: RewardRequest[];
   applyBehaviourAdjustment: (input: BehaviourAdjustmentInput) => string;
   reversePointsTransaction: (transactionId: string) => void;
   createTask: (input: CreateTaskInput) => void;
@@ -161,7 +183,10 @@ type GameplayContextValue = {
   submitTask: (assignmentId: string, note: string, photoUrl: string | null) => void;
   reviewSubmission: (submissionId: string, decision: "approved" | "rejected") => void;
   createReward: (input: CreateRewardInput) => void;
+  createRewardRequest: (input: CreateRewardRequestInput) => void;
   requestReward: (rewardId: string) => void;
+  redeemRewardGoal: (requestId: string) => void;
+  reviewRewardRequest: (input: ReviewRewardRequestInput) => void;
   reviewRewardRedemption: (redemptionId: string, decision: "approved" | "rejected") => void;
   submitMorningRoutine: () => void;
   toggleMorningRoutineItem: (itemId: string) => void;
@@ -188,7 +213,10 @@ type GameplayAction =
   | { type: "submitTask"; assignmentId: string; note: string; photoUrl: string | null }
   | { type: "reviewSubmission"; submissionId: string; decision: "approved" | "rejected" }
   | { type: "createReward"; input: CreateRewardInput }
+  | { type: "createRewardRequest"; input: CreateRewardRequestInput }
   | { type: "requestReward"; rewardId: string }
+  | { type: "redeemRewardGoal"; requestId: string }
+  | { type: "reviewRewardRequest"; input: ReviewRewardRequestInput }
   | { type: "reviewRewardRedemption"; redemptionId: string; decision: "approved" | "rejected" }
   | { type: "submitMorningRoutine" }
   | { type: "toggleMorningRoutineItem"; itemId: string }
@@ -265,6 +293,7 @@ const initialState: GameplayState = {
     }
   ],
   redemptions: [],
+  rewardRequests: [],
   rewards: [
     {
       createdAt: new Date().toISOString(),
@@ -466,6 +495,8 @@ export function GameplayProvider({ children }: PropsWithChildren) {
         return reward ? { redemption, reward } : null;
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
+    const pendingRewardGoalRequests = state.rewardRequests.filter((request) => request.status === "pending_parent_review");
+    const approvedRewardGoals = state.rewardRequests.filter((request) => request.status === "approved_goal" || request.status === "redeemed");
 
     return {
       addHomeworkSubject: (subject) => dispatch({ subject, type: "addHomeworkSubject" }),
@@ -478,6 +509,7 @@ export function GameplayProvider({ children }: PropsWithChildren) {
       cancelTask: (assignmentId) => dispatch({ assignmentId, type: "cancelTask" }),
       childTasks,
       completedTodayTasks,
+      approvedRewardGoals,
       createHomework: (input) => {
         const id = createId("homework");
         dispatch({ input: { ...input, id }, type: "createHomework" });
@@ -491,10 +523,14 @@ export function GameplayProvider({ children }: PropsWithChildren) {
       reservedRewardPoints,
       morningRoutine,
       createReward: (input) => dispatch({ input, type: "createReward" }),
+      createRewardRequest: (input) => dispatch({ input, type: "createRewardRequest" }),
       createTask: (input) => dispatch({ input, type: "createTask" }),
+      pendingRewardGoalRequests,
       pendingSubmissions,
       pendingReviewTasks,
+      redeemRewardGoal: (requestId) => dispatch({ requestId, type: "redeemRewardGoal" }),
       requestReward: (rewardId) => dispatch({ rewardId, type: "requestReward" }),
+      reviewRewardRequest: (input) => dispatch({ input, type: "reviewRewardRequest" }),
       reviewRewardRedemption: (redemptionId, decision) =>
         dispatch({ decision, redemptionId, type: "reviewRewardRedemption" }),
       reviewSubmission: (submissionId, decision) => dispatch({ decision, submissionId, type: "reviewSubmission" }),
@@ -1042,6 +1078,45 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
       };
     }
 
+    case "createRewardRequest": {
+      const now = new Date().toISOString();
+      const title = action.input.title.trim();
+      const description = action.input.description.trim();
+
+      if (!title || !description) {
+        return state;
+      }
+
+      return {
+        ...state,
+        rewardRequests: [
+          {
+            approvedAt: null,
+            category: action.input.category,
+            childId,
+            conditions: null,
+            createdAt: now,
+            deadlineDate: null,
+            deniedAt: null,
+            description,
+            eventDate: action.input.eventDate?.trim() || null,
+            householdId,
+            id: createId("reward-request"),
+            parentNote: null,
+            parentPointTarget: null,
+            reviewedAt: null,
+            status: "pending_parent_review",
+            suggestedPointTarget:
+              action.input.suggestedPointTarget === null || action.input.suggestedPointTarget === undefined
+                ? null
+                : Math.max(0, Math.round(action.input.suggestedPointTarget)),
+            title
+          },
+          ...state.rewardRequests
+        ]
+      };
+    }
+
     case "requestReward": {
       const reward = state.rewards.find((item) => item.id === action.rewardId);
       const alreadyRequested = state.redemptions.some(
@@ -1110,6 +1185,70 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
             : item
         ),
         pointsTransactions: pointTransaction ? [pointTransaction, ...state.pointsTransactions] : state.pointsTransactions
+      };
+    }
+
+    case "reviewRewardRequest": {
+      const now = new Date().toISOString();
+      const request = state.rewardRequests.find((item) => item.id === action.input.requestId);
+
+      if (!request || request.status !== "pending_parent_review") {
+        return state;
+      }
+
+      const approved = action.input.decision === "approved";
+      const parentPointTarget = Math.max(1, Math.round(action.input.parentPointTarget ?? request.suggestedPointTarget ?? 100));
+
+      return {
+        ...state,
+        rewardRequests: state.rewardRequests.map((item) =>
+          item.id === request.id
+            ? {
+                ...item,
+                approvedAt: approved ? now : null,
+                conditions: approved ? action.input.conditions?.trim() || null : null,
+                deadlineDate: approved ? action.input.deadlineDate?.trim() || item.eventDate : null,
+                deniedAt: approved ? null : now,
+                parentNote: action.input.parentNote?.trim() || null,
+                parentPointTarget: approved ? parentPointTarget : null,
+                reviewedAt: now,
+                status: approved ? "approved_goal" : "denied"
+              }
+            : item
+        )
+      };
+    }
+
+    case "redeemRewardGoal": {
+      const request = state.rewardRequests.find((item) => item.id === action.requestId);
+      const activeBalance = getPointsBalance(state.pointsTransactions.filter(isActivePointsTransaction));
+      const target = request?.parentPointTarget ?? request?.suggestedPointTarget ?? null;
+
+      if (!request || request.status !== "approved_goal" || !target || activeBalance < target) {
+        return state;
+      }
+
+      const now = new Date().toISOString();
+      const pointTransaction: PointsTransaction = {
+        amount: -target,
+        category: request.title,
+        childId,
+        createdAt: now,
+        deletedAt: null,
+        householdId,
+        id: createId("points"),
+        note: `Goal redeemed: ${request.title}`,
+        reason: "Reward goal redeemed",
+        reversedAt: null,
+        sourceRewardId: request.id,
+        sourceTaskId: null,
+        type: "reward_redemption"
+      };
+
+      return {
+        ...state,
+        pointsTransactions: [pointTransaction, ...state.pointsTransactions],
+        rewardRequests: state.rewardRequests.map((item) => (item.id === request.id ? { ...item, status: "redeemed", reviewedAt: now } : item))
       };
     }
 
