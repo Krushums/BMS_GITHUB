@@ -20,7 +20,6 @@ import { Card } from "@/shared/components/Card";
 import { ProfileMenu } from "@/shared/components/ProfileMenu";
 import { usePreviewMode } from "@/shared/components/PreviewModeContext";
 import { Screen } from "@/shared/components/Screen";
-import { SummaryBar } from "@/shared/components/SummaryBar";
 import { colors, spacing } from "@/shared/theme";
 import { addDays, addWeeks, formatDateTimeLabel, formatWeekRange, getStartOfWeek, isSameDay, isSameWeek } from "@/shared/utils/date";
 
@@ -107,8 +106,6 @@ export default function ChildDashboardScreen() {
         </View>
         <ProfileMenu displayName={profileName} />
       </View>
-      <SummaryBar items={getChildSummaryItems(gameplay)} />
-
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
         {childTabs.map((tab) => (
           <HighlightTarget active={tourVisible && activeTourStep?.target === tab.id} key={tab.id}>
@@ -1500,41 +1497,6 @@ function ActivityRow({ transaction }: { transaction: PointsTransaction }) {
       </View>
     </Card>
   );
-}
-
-function getChildSummaryItems(gameplay: Gameplay) {
-  const shop = getRewardShopState(gameplay);
-
-  return [
-    {
-      accentColor: colors.success,
-      caption: `Spent ${gameplay.pointsSummary.spent}`,
-      icon: "sparkles" as const,
-      label: "Total earned",
-      value: `${gameplay.pointsSummary.earned}`
-    },
-    {
-      accentColor: colors.accent,
-      caption: "Keep it going",
-      icon: "flame" as const,
-      label: "Streak",
-      value: `${gameplay.state.child.streak} days`
-    },
-    {
-      accentColor: colors.sky,
-      caption: "Ready for rewards",
-      icon: "wallet" as const,
-      label: "Available",
-      value: `${shop.availablePoints} pts`
-    },
-    {
-      accentColor: colors.accent,
-      caption: "Top 20%",
-      icon: "shield-checkmark" as const,
-      label: "League",
-      value: shop.league
-    }
-  ];
 }
 
 type League = "Bronze" | "Silver" | "Gold" | "Platinum" | "Diamond";

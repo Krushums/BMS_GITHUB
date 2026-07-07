@@ -1,5 +1,5 @@
-export type CalendarEventType = "homework" | "subject" | "revision" | "school_event" | "reward_goal" | "custom";
-export type CalendarEventCategory = "school" | "homework" | "revision" | "reward_goal" | "custom";
+export type CalendarEventType = "lesson" | "revision" | "event" | "exam";
+export type CalendarEventCategory = "lesson" | "revision" | "event" | "exam";
 export type CalendarEventKind = "event" | "reminder";
 
 export type CalendarEvent = {
@@ -22,6 +22,7 @@ export type CalendarEvent = {
   repeat: string | null;
   isCompleted: boolean;
   pointsValue: number;
+  requiresEvidence: boolean;
   isRecurring: boolean;
   notes: string | null;
   sourceHomeworkId: string | null;

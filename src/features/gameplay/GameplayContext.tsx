@@ -162,6 +162,7 @@ type CalendarEventInput = {
   repeat?: string | null;
   isCompleted?: boolean;
   pointsValue?: number;
+  requiresEvidence?: boolean;
   isRecurring?: boolean;
   notes?: string | null;
 };
@@ -1325,7 +1326,7 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
           {
             alert: action.input.alert?.trim() || null,
             allDay: action.input.allDay ?? false,
-            category: action.input.category ?? "custom",
+            category: action.input.category ?? "event",
             childId,
             color: action.input.color?.trim() || "#64748B",
             createdAt: now,
@@ -1340,6 +1341,7 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
             location: action.input.location?.trim() || null,
             notes: action.input.notes?.trim() || null,
             pointsValue: action.input.pointsValue ?? 0,
+            requiresEvidence: action.input.requiresEvidence ?? false,
             repeat: action.input.repeat?.trim() || null,
             sourceHomeworkId: null,
             sourceRewardRequestId: null,
@@ -1366,7 +1368,7 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
                 ...event,
                 alert: action.input.alert?.trim() || null,
                 allDay: action.input.allDay ?? false,
-                category: action.input.category ?? event.category ?? "custom",
+                category: action.input.category ?? event.category ?? "event",
                 color: action.input.color?.trim() || event.color || "#64748B",
                 date: action.input.date.trim().slice(0, 10),
                 endTime: action.input.endTime?.trim() || null,
@@ -1376,6 +1378,7 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
                 location: action.input.location?.trim() || null,
                 notes: action.input.notes?.trim() || null,
                 pointsValue: action.input.pointsValue ?? event.pointsValue ?? 0,
+                requiresEvidence: action.input.requiresEvidence ?? event.requiresEvidence ?? false,
                 repeat: action.input.repeat?.trim() || null,
                 startTime: action.input.startTime?.trim() || action.input.time?.trim() || null,
                 subject: action.input.subject?.trim() || null,
