@@ -17,7 +17,6 @@ export default function HouseholdSetupScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   function handleCreateHousehold() {
-    console.log("household setup pressed");
     const result = auth.createHousehold({
       childDisplayName,
       childUsername,
@@ -31,7 +30,6 @@ export default function HouseholdSetupScreen() {
       return;
     }
 
-    console.log("destination route", "/parent");
     setErrorMessage(null);
     router.replace("/parent");
   }

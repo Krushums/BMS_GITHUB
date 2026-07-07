@@ -1,0 +1,32 @@
+export type CalendarEventType = "homework" | "subject" | "revision" | "school_event" | "reward_goal" | "custom";
+export type CalendarEventCategory = "school" | "homework" | "revision" | "reward_goal" | "custom";
+export type CalendarEventKind = "event" | "reminder";
+
+export type CalendarEvent = {
+  id: string;
+  childId: string;
+  householdId: string;
+  title: string;
+  type: CalendarEventType;
+  kind: CalendarEventKind;
+  category: CalendarEventCategory;
+  color: string;
+  subject: string | null;
+  date: string;
+  time: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  allDay: boolean;
+  location: string | null;
+  alert: string | null;
+  repeat: string | null;
+  isCompleted: boolean;
+  pointsValue: number;
+  isRecurring: boolean;
+  notes: string | null;
+  sourceHomeworkId: string | null;
+  sourceRewardRequestId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+};

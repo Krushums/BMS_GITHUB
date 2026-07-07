@@ -12,13 +12,11 @@ export default function WelcomeScreen() {
   const auth = useMockAuth();
 
   function openDemoParent() {
-    console.log("view parent demo pressed");
     auth.continueDemoParent();
     router.replace("/parent");
   }
 
   function openDemoChild() {
-    console.log("view child demo pressed");
     auth.continueDemoChild();
     router.replace("/child");
   }
@@ -47,7 +45,6 @@ export default function WelcomeScreen() {
           icon="mail"
           label="Log in or sign up"
           onPress={() => {
-            console.log("auth entry pressed");
             router.replace("/auth");
           }}
         />

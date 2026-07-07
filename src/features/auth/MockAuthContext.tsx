@@ -219,7 +219,6 @@ export function MockAuthProvider({ children }: PropsWithChildren) {
       ...state,
       adminLogin: (email, password) => {
         const submittedEmail = email.trim().toLowerCase();
-        console.log("admin login pressed", submittedEmail);
 
         if (submittedEmail !== MOCK_ADMIN.email || password !== MOCK_ADMIN.password) {
           return { error: "Admin login failed. Use the local development admin credentials.", ok: false };
@@ -239,11 +238,9 @@ export function MockAuthProvider({ children }: PropsWithChildren) {
       completeOnboarding: () => dispatch({ type: "completeOnboarding" }),
       completeTour: (tour) => dispatch({ tour, type: "completeTour" }),
       continueDemoChild: () => {
-        console.log("demo child selected", DEMO_CHILD.username);
         dispatch({ type: "continueDemoChild" });
       },
       continueDemoParent: () => {
-        console.log("demo parent selected", DEMO_PARENT.email);
         dispatch({ type: "continueDemoParent" });
       },
       createChildProfile: (input) => {
@@ -340,16 +337,11 @@ export function MockAuthProvider({ children }: PropsWithChildren) {
         const email = input.email.trim().toLowerCase();
         const fullName = input.fullName.trim();
 
-        console.log("signup pressed");
-        console.log("submitted email", email);
-        console.log("selected role", "parent");
-
         if (!fullName || !email || input.password.length < 4) {
           return { error: "Add a full name, email, and password of at least 4 characters.", ok: false };
         }
 
         if (state.parents.some((item) => item.email.toLowerCase() === email)) {
-          console.log("mock signup blocked: account exists", email);
           return { error: "A mock parent account already exists for this email. Use Login instead.", ok: false };
         }
 
@@ -364,7 +356,6 @@ export function MockAuthProvider({ children }: PropsWithChildren) {
           role: "parent"
         };
 
-        console.log("mock user created", parent.email);
         dispatch({ parent, type: "signUpParent" });
         return { ok: true };
       },

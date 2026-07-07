@@ -1,6 +1,10 @@
 import { createContext, PropsWithChildren, useContext, useMemo, useReducer } from "react";
 
 import {
+  CalendarEvent,
+  CalendarEventCategory,
+  CalendarEventKind,
+  CalendarEventType,
   EvidenceSubmission,
   HomeworkEvidence,
   HomeworkItem,
@@ -42,6 +46,7 @@ type GameplayState = {
   homeworkSessions: HomeworkSession[];
   homeworkEvidence: HomeworkEvidence[];
   homeworkSubjects: string[];
+  calendarEvents: CalendarEvent[];
 };
 
 type MorningRoutineCompletion = {
@@ -136,7 +141,33 @@ type HomeworkEvidenceInput = {
   id?: string;
   homeworkId: string;
   imageUri: string | null;
+  evidenceType?: "live_photo" | "photo_library" | "file_upload";
   comment?: string;
+};
+
+type CalendarEventInput = {
+  title: string;
+  type: CalendarEventType;
+  date: string;
+  kind?: CalendarEventKind;
+  category?: CalendarEventCategory;
+  color?: string;
+  subject?: string | null;
+  time?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  allDay?: boolean;
+  location?: string | null;
+  alert?: string | null;
+  repeat?: string | null;
+  isCompleted?: boolean;
+  pointsValue?: number;
+  isRecurring?: boolean;
+  notes?: string | null;
+};
+
+type UpdateCalendarEventInput = CalendarEventInput & {
+  eventId: string;
 };
 
 type HomeworkSessionInput = {
@@ -202,6 +233,9 @@ type GameplayContextValue = {
   deleteHomeworkEvidence: (evidenceId: string) => void;
   restoreHomeworkEvidence: (evidenceId: string) => void;
   addHomeworkSubject: (subject: string) => void;
+  createCalendarEvent: (input: CalendarEventInput) => void;
+  updateCalendarEvent: (input: UpdateCalendarEventInput) => void;
+  deleteCalendarEvent: (eventId: string) => void;
 };
 
 type GameplayAction =
@@ -231,7 +265,10 @@ type GameplayAction =
   | { type: "submitHomeworkEvidence"; input: HomeworkEvidenceInput }
   | { type: "deleteHomeworkEvidence"; evidenceId: string }
   | { type: "restoreHomeworkEvidence"; evidenceId: string }
-  | { type: "addHomeworkSubject"; subject: string };
+  | { type: "addHomeworkSubject"; subject: string }
+  | { type: "createCalendarEvent"; input: CalendarEventInput }
+  | { type: "updateCalendarEvent"; input: UpdateCalendarEventInput }
+  | { type: "deleteCalendarEvent"; eventId: string };
 
 export type GameplayTask = {
   assignment: TaskAssignment;
@@ -262,6 +299,7 @@ const initialState: GameplayState = {
       archivedAt: null
     }
   ],
+  calendarEvents: [],
   child: {
     bestStreak: 3,
     childId,
@@ -510,11 +548,13 @@ export function GameplayProvider({ children }: PropsWithChildren) {
       childTasks,
       completedTodayTasks,
       approvedRewardGoals,
+      createCalendarEvent: (input) => dispatch({ input, type: "createCalendarEvent" }),
       createHomework: (input) => {
         const id = createId("homework");
         dispatch({ input: { ...input, id }, type: "createHomework" });
         return id;
       },
+      deleteCalendarEvent: (eventId) => dispatch({ eventId, type: "deleteCalendarEvent" }),
       deleteHomework: (homeworkId) => dispatch({ homeworkId, type: "deleteHomework" }),
       deleteHomeworkEvidence: (evidenceId) => dispatch({ evidenceId, type: "deleteHomeworkEvidence" }),
       deleteHomeworkSession: (sessionId) => dispatch({ sessionId, type: "deleteHomeworkSession" }),
@@ -554,6 +594,7 @@ export function GameplayProvider({ children }: PropsWithChildren) {
       updateHomework: (input) => dispatch({ input, type: "updateHomework" }),
       updateHomeworkStatus: (homeworkId, status, completedAt) =>
         dispatch({ ...(completedAt !== undefined ? { completedAt } : {}), homeworkId, status, type: "updateHomeworkStatus" }),
+      updateCalendarEvent: (input) => dispatch({ input, type: "updateCalendarEvent" }),
       updateTask: (input) => dispatch({ input, type: "updateTask" }),
       upcomingTasks
     };
@@ -901,16 +942,20 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
     }
 
     case "submitHomeworkEvidence": {
+      const now = new Date().toISOString();
+
       return {
         ...state,
         homeworkEvidence: [
           {
             comment: action.input.comment?.trim() || null,
+            createdAt: now,
             deletedAt: null,
+            evidenceType: action.input.evidenceType ?? "photo_library",
             homeworkId: action.input.homeworkId,
             id: action.input.id ?? createId("homework-evidence"),
             imageUri: action.input.imageUri,
-            submittedAt: new Date().toISOString()
+            submittedAt: now
           },
           ...state.homeworkEvidence
         ]
@@ -1264,6 +1309,93 @@ function gameplayReducer(state: GameplayState, action: GameplayAction): Gameplay
         homeworkSubjects: [...state.homeworkSubjects, subject]
       };
     }
+
+    case "createCalendarEvent": {
+      const now = new Date().toISOString();
+      const title = action.input.title.trim();
+      const date = action.input.date.trim().slice(0, 10);
+
+      if (!title || !date) {
+        return state;
+      }
+
+      return {
+        ...state,
+        calendarEvents: [
+          {
+            alert: action.input.alert?.trim() || null,
+            allDay: action.input.allDay ?? false,
+            category: action.input.category ?? "custom",
+            childId,
+            color: action.input.color?.trim() || "#64748B",
+            createdAt: now,
+            date,
+            deletedAt: null,
+            endTime: action.input.endTime?.trim() || null,
+            householdId,
+            id: createId("calendar"),
+            isCompleted: action.input.isCompleted ?? false,
+            isRecurring: action.input.isRecurring ?? false,
+            kind: action.input.kind ?? "event",
+            location: action.input.location?.trim() || null,
+            notes: action.input.notes?.trim() || null,
+            pointsValue: action.input.pointsValue ?? 0,
+            repeat: action.input.repeat?.trim() || null,
+            sourceHomeworkId: null,
+            sourceRewardRequestId: null,
+            startTime: action.input.startTime?.trim() || action.input.time?.trim() || null,
+            subject: action.input.subject?.trim() || null,
+            time: action.input.time?.trim() || null,
+            title,
+            type: action.input.type,
+            updatedAt: now
+          },
+          ...state.calendarEvents
+        ]
+      };
+    }
+
+    case "updateCalendarEvent": {
+      const now = new Date().toISOString();
+
+      return {
+        ...state,
+        calendarEvents: state.calendarEvents.map((event) =>
+          event.id === action.input.eventId
+            ? {
+                ...event,
+                alert: action.input.alert?.trim() || null,
+                allDay: action.input.allDay ?? false,
+                category: action.input.category ?? event.category ?? "custom",
+                color: action.input.color?.trim() || event.color || "#64748B",
+                date: action.input.date.trim().slice(0, 10),
+                endTime: action.input.endTime?.trim() || null,
+                isCompleted: action.input.isCompleted ?? event.isCompleted ?? false,
+                isRecurring: action.input.isRecurring ?? event.isRecurring ?? false,
+                kind: action.input.kind ?? event.kind ?? "event",
+                location: action.input.location?.trim() || null,
+                notes: action.input.notes?.trim() || null,
+                pointsValue: action.input.pointsValue ?? event.pointsValue ?? 0,
+                repeat: action.input.repeat?.trim() || null,
+                startTime: action.input.startTime?.trim() || action.input.time?.trim() || null,
+                subject: action.input.subject?.trim() || null,
+                time: action.input.time?.trim() || null,
+                title: action.input.title.trim(),
+                type: action.input.type,
+                updatedAt: now
+              }
+            : event
+        )
+      };
+    }
+
+    case "deleteCalendarEvent":
+      return {
+        ...state,
+        calendarEvents: state.calendarEvents.map((event) =>
+          event.id === action.eventId ? { ...event, deletedAt: new Date().toISOString() } : event
+        )
+      };
 
     default:
       return state;

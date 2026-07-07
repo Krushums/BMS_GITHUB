@@ -34,7 +34,6 @@ export default function AuthScreen() {
   }
 
   function handleLogin() {
-    console.log("login pressed");
     if (!validateBase()) {
       return;
     }
@@ -68,7 +67,6 @@ export default function AuthScreen() {
     }
 
     setMessage({ text: "Account created. Let's get your family set up.", tone: "success" });
-    console.log("destination route", "/onboarding");
     router.replace("/onboarding");
   }
 

@@ -33,6 +33,8 @@ export type HomeworkEvidence = {
   id: string;
   homeworkId: string;
   imageUri: string | null;
+  evidenceType: "live_photo" | "photo_library" | "file_upload";
+  createdAt: string;
   submittedAt: string;
   comment: string | null;
   deletedAt: string | null;

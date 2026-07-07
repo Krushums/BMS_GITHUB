@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, ViewStyle } from "react-native";
+import { Pressable, StyleProp, StyleSheet, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { AppText } from "@/shared/components/AppText";
@@ -11,7 +11,7 @@ type ButtonProps = {
   icon?: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   variant?: ButtonVariant;
 };
 

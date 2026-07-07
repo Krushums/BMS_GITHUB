@@ -1,9 +1,10 @@
 import { ReactNode, useEffect, useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 
 import { DashboardHeader } from "@/features/dashboard/DashboardHeader";
+import { CalendarPanel } from "@/features/calendar/CalendarPanel";
 import { useMockAuth } from "@/features/auth/MockAuthContext";
 import { useGameplay } from "@/features/gameplay/GameplayContext";
 import { HomeworkItem, PointsTransaction, RewardRequest } from "@/domain";
@@ -14,17 +15,19 @@ import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
 import { Screen } from "@/shared/components/Screen";
 import { ProfileMenu } from "@/shared/components/ProfileMenu";
+import { usePreviewMode } from "@/shared/components/PreviewModeContext";
 import { SummaryBar, SummaryCardItem } from "@/shared/components/SummaryBar";
 import { HighlightTarget, TourOverlay, TourStep } from "@/features/help/TourOverlay";
 import { colors, spacing } from "@/shared/theme";
 import { addDays, addWeeks, formatDateLabel, formatDateTimeLabel, formatWeekRange, getStartOfWeek } from "@/shared/utils/date";
 
-type ParentTab = "dashboard" | "tasks" | "homework" | "behaviour" | "rewards" | "review" | "history" | "analytics";
+type ParentTab = "dashboard" | "tasks" | "homework" | "calendar" | "behaviour" | "rewards" | "review" | "history" | "analytics";
 
 const tabs: Array<{ id: ParentTab; label: string }> = [
   { id: "dashboard", label: "Dashboard" },
   { id: "tasks", label: "Tasks" },
   { id: "homework", label: "Homework" },
+  { id: "calendar", label: "Calendar" },
   { id: "behaviour", label: "Behaviour" },
   { id: "rewards", label: "Rewards" },
   { id: "review", label: "Review" },
@@ -102,11 +105,14 @@ export default function ParentDashboardScreen() {
   const gameplay = useGameplay();
   const auth = useMockAuth();
   const params = useLocalSearchParams<{ tour?: string }>();
+  const { mode } = usePreviewMode();
+  const { width } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<ParentTab>("dashboard");
   const [tourIndex, setTourIndex] = useState(0);
   const [tourVisible, setTourVisible] = useState(false);
   const profileName = auth.currentParent?.fullName ?? "Parent";
   const activeTourStep = parentTourSteps[tourIndex] ?? parentTourSteps[0];
+  const compact = mode === "phone" || width <= 520;
 
   useEffect(() => {
     if (params.tour === "parent") {
@@ -142,6 +148,7 @@ export default function ParentDashboardScreen() {
               <Button
                 label={tab.label}
                 onPress={() => setActiveTab(tab.id)}
+                style={compact ? styles.parentTabButtonCompact : undefined}
                 variant={activeTab === tab.id ? "primary" : "secondary"}
               />
             </HighlightTarget>
@@ -152,6 +159,7 @@ export default function ParentDashboardScreen() {
           {activeTab === "dashboard" ? <DashboardTab gameplay={gameplay} setActiveTab={setActiveTab} /> : null}
           {activeTab === "tasks" ? <TasksTab gameplay={gameplay} /> : null}
           {activeTab === "homework" ? <HomeworkTab gameplay={gameplay} /> : null}
+          {activeTab === "calendar" ? <CalendarPanel audience="parent" /> : null}
           {activeTab === "behaviour" ? <BehaviourTab gameplay={gameplay} /> : null}
           {activeTab === "rewards" ? <RewardsTab gameplay={gameplay} /> : null}
           {activeTab === "review" ? <ReviewTab gameplay={gameplay} /> : null}
@@ -1929,6 +1937,10 @@ const styles = StyleSheet.create({
     alignItems: "stretch",
     gap: spacing.lg,
     width: "100%"
+  },
+  parentTabButtonCompact: {
+    minWidth: 96,
+    paddingHorizontal: spacing.sm
   },
   positivePreset: {
     backgroundColor: "#F4FFFA"

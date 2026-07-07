@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Image, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
 
 import { HomeworkItem, HomeworkStatus, PointsTransaction, Reward, RewardRequest, RewardRequestCategory } from "@/domain";
+import { CalendarPanel } from "@/features/calendar/CalendarPanel";
 import { DashboardHeader } from "@/features/dashboard/DashboardHeader";
 import { useMockAuth } from "@/features/auth/MockAuthContext";
 import { useGameplay } from "@/features/gameplay/GameplayContext";
@@ -16,16 +18,18 @@ import { AppText } from "@/shared/components/AppText";
 import { Button } from "@/shared/components/Button";
 import { Card } from "@/shared/components/Card";
 import { ProfileMenu } from "@/shared/components/ProfileMenu";
+import { usePreviewMode } from "@/shared/components/PreviewModeContext";
 import { Screen } from "@/shared/components/Screen";
 import { SummaryBar } from "@/shared/components/SummaryBar";
 import { colors, spacing } from "@/shared/theme";
 import { addDays, addWeeks, formatDateTimeLabel, formatWeekRange, getStartOfWeek, isSameDay, isSameWeek } from "@/shared/utils/date";
 
-type ChildTab = "today" | "homework" | "rewards" | "progress" | "activity";
+type ChildTab = "today" | "homework" | "calendar" | "rewards" | "progress" | "activity";
 
 const childTabs: Array<{ icon: keyof typeof Ionicons.glyphMap; id: ChildTab; label: string }> = [
   { icon: "sunny", id: "today", label: "Today" },
   { icon: "book", id: "homework", label: "Homework" },
+  { icon: "calendar", id: "calendar", label: "Calendar" },
   { icon: "gift", id: "rewards", label: "Rewards" },
   { icon: "trending-up", id: "progress", label: "Progress" },
   { icon: "sparkles", id: "activity", label: "Activity" }
@@ -63,11 +67,14 @@ export default function ChildDashboardScreen() {
   const gameplay = useGameplay();
   const auth = useMockAuth();
   const params = useLocalSearchParams<{ tour?: string }>();
+  const { mode } = usePreviewMode();
+  const { width } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<ChildTab>("today");
   const [tourIndex, setTourIndex] = useState(0);
   const [tourVisible, setTourVisible] = useState(false);
   const profileName = auth.currentChild?.displayName ?? gameplay.state.child.displayName;
   const activeTourStep = childTourSteps[tourIndex] ?? childTourSteps[0];
+  const compact = mode === "phone" || width <= 520;
 
   useEffect(() => {
     if (params.tour === "child") {
@@ -109,10 +116,9 @@ export default function ChildDashboardScreen() {
               icon={tab.icon}
               label={tab.label}
               onPress={() => {
-                console.log(`child tab pressed: ${tab.id}`);
                 setActiveTab(tab.id);
               }}
-              style={styles.childTabButton}
+              style={[styles.childTabButton, compact && styles.childTabButtonCompact]}
               variant={activeTab === tab.id ? "primary" : "secondary"}
             />
           </HighlightTarget>
@@ -121,6 +127,7 @@ export default function ChildDashboardScreen() {
 
       {activeTab === "today" ? <TodayTab gameplay={gameplay} /> : null}
       {activeTab === "homework" ? <HomeworkTab gameplay={gameplay} /> : null}
+      {activeTab === "calendar" ? <CalendarPanel audience="child" /> : null}
       {activeTab === "rewards" ? <RewardsTab gameplay={gameplay} /> : null}
       {activeTab === "progress" ? <ProgressTab gameplay={gameplay} /> : null}
       {activeTab === "activity" ? <ActivityTab gameplay={gameplay} /> : null}
@@ -446,16 +453,23 @@ function HomeworkDayCard({
   selectedDate: string;
   setUndo: (undo: { label: string; onUndo: () => void } | null) => void;
 }) {
+  const { mode } = usePreviewMode();
+  const { width } = useWindowDimensions();
   const evidence = homework ? gameplay.state.homeworkEvidence.filter((item) => item.homeworkId === homework.id && !item.deletedAt) : [];
   const [notesDraft, setNotesDraft] = useState(homework?.description ?? "");
   const [selectedSubject, setSelectedSubject] = useState(homework?.subject || gameplay.state.homeworkSubjects[0] || "");
   const [selectedStatus, setSelectedStatus] = useState<HomeworkStatus>(homework?.status ?? "not_started");
   const [dueDateDraft, setDueDateDraft] = useState(getHomeworkDueDate(homework ?? undefined) ?? selectedDate);
+  const cameraRef = useRef<CameraView>(null);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
   const firstEvidence = evidence[0] ?? null;
   const dayLabel = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", weekday: "long" }).format(new Date(`${selectedDate}T12:00:00.000Z`));
   const detailsDisabled = selectedStatus === "incomplete";
   const isSubmitted = Boolean(homework?.submittedAt);
   const showIncompleteConfirmation = selectedStatus === "incomplete";
+  const compact = mode === "phone" || width <= 520;
 
   function saveDay(status = selectedStatus) {
     const statusToSave = status === "not_started" ? "in_progress" : status;
@@ -503,33 +517,62 @@ function HomeworkDayCard({
     });
   }
 
-  async function addEvidence(source: "camera" | "library" | "file") {
-    if (source === "file") {
-      const fileResult = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
+  async function openLiveCamera() {
+    const permissionResult = cameraPermission?.granted ? cameraPermission : await requestCameraPermission();
 
-      if (!fileResult.canceled) {
-        attachEvidence(fileResult.assets[0]?.uri ?? null, fileResult.assets[0]?.name ?? "Homework file");
-      }
-
+    if (!permissionResult?.granted) {
+      Alert.alert("Camera permission needed", "Please allow camera access to take a live homework proof photo.");
       return;
     }
 
-    const result = source === "camera" ? await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.75
-    }) : await ImagePicker.launchImageLibraryAsync({
+    const available = await CameraView.isAvailableAsync();
+    if (!available) {
+      Alert.alert("Camera not available", "Camera not available on this device. Use photo library instead.");
+      return;
+    }
+
+    setCapturedPhotoUri(null);
+    setCameraOpen(true);
+  }
+
+  async function takeLivePhoto() {
+    const photo = await cameraRef.current?.takePictureAsync({ quality: 0.75 });
+    if (photo?.uri) {
+      setCapturedPhotoUri(photo.uri);
+      setCameraOpen(false);
+    }
+  }
+
+  async function addLibraryEvidence() {
+    const result = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.75
     });
 
     if (!result.canceled) {
-      attachEvidence(result.assets[0]?.uri ?? null);
+      attachEvidence(result.assets[0]?.uri ?? null, undefined, "photo_library");
     }
   }
 
-function attachEvidence(imageUri: string | null, fileName?: string) {
+  async function addFileEvidence() {
+    const fileResult = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
+
+    if (!fileResult.canceled) {
+      attachEvidence(fileResult.assets[0]?.uri ?? null, fileResult.assets[0]?.name ?? "Homework file", "file_upload");
+    }
+  }
+
+  function attachCapturedPhoto() {
+    if (!capturedPhotoUri) {
+      return;
+    }
+
+    attachEvidence(capturedPhotoUri, undefined, "live_photo");
+    setCapturedPhotoUri(null);
+  }
+
+  function attachEvidence(imageUri: string | null, fileName?: string, evidenceType: "live_photo" | "photo_library" | "file_upload" = "photo_library") {
     const homeworkId = homework?.id ?? createDraftHomework("in_progress");
 
     if (firstEvidence) {
@@ -537,6 +580,7 @@ function attachEvidence(imageUri: string | null, fileName?: string) {
     }
 
     const evidenceId = gameplay.submitHomeworkEvidence({
+      evidenceType,
       homeworkId,
       imageUri,
       ...(fileName ? { comment: fileName } : {})
@@ -654,8 +698,8 @@ function attachEvidence(imageUri: string | null, fileName?: string) {
             <AppText color={colors.inkMuted}>This will save that homework was not completed today.</AppText>
           </View>
           <View style={styles.homeworkEvidenceBar}>
-            <Button icon="checkmark-circle" label="Submit incomplete" onPress={() => saveDay("incomplete")} />
-            <Button label="Change answer" onPress={() => setSelectedStatus("not_started")} variant="secondary" />
+            <Button icon="checkmark-circle" label="Submit incomplete" onPress={() => saveDay("incomplete")} style={compact ? styles.mobileActionButton : undefined} />
+            <Button label="Change answer" onPress={() => setSelectedStatus("not_started")} style={compact ? styles.mobileActionButton : undefined} variant="secondary" />
           </View>
         </View>
       ) : (
@@ -709,13 +753,33 @@ function attachEvidence(imageUri: string | null, fileName?: string) {
           />
 
           <View style={styles.homeworkEvidenceBar}>
-            <Button icon="camera" label="Live photo" onPress={() => addEvidence("camera")} variant="secondary" />
-            <Button icon="image" label="Photo library" onPress={() => addEvidence("library")} variant="secondary" />
-            <Button icon="document-attach" label="File upload" onPress={() => addEvidence("file")} variant="secondary" />
+            <Button icon="camera" label="Live photo" onPress={openLiveCamera} style={compact ? styles.mobileActionButton : undefined} variant="secondary" />
+            <Button icon="image" label="Photo library" onPress={addLibraryEvidence} style={compact ? styles.mobileActionButton : undefined} variant="secondary" />
+            <Button icon="document-attach" label="File upload" onPress={addFileEvidence} style={compact ? styles.mobileActionButton : undefined} variant="secondary" />
           </View>
 
+          {cameraOpen ? (
+            <View style={styles.homeworkCameraPanel}>
+              <CameraView ref={cameraRef} facing="back" style={styles.homeworkCamera} />
+              <View style={styles.homeworkEvidenceBar}>
+                <Button label="Cancel" onPress={() => setCameraOpen(false)} style={compact ? styles.mobileActionButton : undefined} variant="secondary" />
+                <Button icon="camera" label="Take photo" onPress={takeLivePhoto} style={compact ? styles.mobileActionButton : undefined} />
+              </View>
+            </View>
+          ) : null}
+
+          {capturedPhotoUri ? (
+            <View style={styles.homeworkCameraPanel}>
+              <Image source={{ uri: capturedPhotoUri }} style={styles.homeworkPreview} />
+              <View style={styles.homeworkEvidenceBar}>
+                <Button label="Retake" onPress={openLiveCamera} style={compact ? styles.mobileActionButton : undefined} variant="secondary" />
+                <Button icon="checkmark-circle" label="Use Photo" onPress={attachCapturedPhoto} style={compact ? styles.mobileActionButton : undefined} />
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.homeworkEvidenceBar}>
-            <Button icon="checkmark-circle" label="Submit / Save today" onPress={() => saveDay(selectedStatus)} />
+            <Button icon="checkmark-circle" label="Submit / Save today" onPress={() => saveDay(selectedStatus)} style={compact ? styles.mobileActionButton : undefined} />
           </View>
 
           {evidence.length > 0 ? (
@@ -1927,6 +1991,20 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.md
   },
+  homeworkCamera: {
+    aspectRatio: 4 / 3,
+    borderRadius: 8,
+    overflow: "hidden",
+    width: "100%"
+  },
+  homeworkCameraPanel: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.sm
+  },
   homeworkPreview: {
     aspectRatio: 4 / 3,
     borderRadius: 8,
@@ -2331,6 +2409,15 @@ const styles = StyleSheet.create({
   },
   childTabButton: {
     minWidth: 116
+  },
+  childTabButtonCompact: {
+    minWidth: 96,
+    paddingHorizontal: spacing.sm
+  },
+  mobileActionButton: {
+    flexBasis: "100%",
+    flexGrow: 1,
+    minWidth: 0
   },
   tabRow: {
     flexDirection: "row",

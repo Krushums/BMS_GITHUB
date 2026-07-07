@@ -1,3 +1,4 @@
+export type { CalendarEvent, CalendarEventCategory, CalendarEventKind, CalendarEventType } from "./calendar";
 export type { EvidenceStatus, EvidenceSubmission } from "./evidence";
 export type { HomeworkEvidence, HomeworkItem, HomeworkSession, HomeworkStatus } from "./homework";
 export type { Household, HouseholdMember } from "./household";
