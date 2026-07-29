@@ -106,7 +106,7 @@ export default function ChildDashboardScreen() {
         </View>
         <ProfileMenu displayName={profileName} />
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow} style={styles.tabScroller}>
         {childTabs.map((tab) => (
           <HighlightTarget active={tourVisible && activeTourStep?.target === tab.id} key={tab.id}>
             <Button
@@ -2385,6 +2385,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     paddingRight: spacing.md
+  },
+  tabScroller: {
+    flexGrow: 0,
+    flexShrink: 0,
+    maxHeight: 52,
+    width: "100%"
   },
   taskBlock: {
     gap: spacing.sm
